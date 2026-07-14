@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print the current 6-digit SHA-256 TOTP for a Base32 seed."""
+"""Continuously display the current 6-digit SHA-256 TOTP and remaining time."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ import sys
 import time
 import urllib.parse
 
+ALGORITHM = hashlib.sha256
+DIGITS = 6
+PERIOD = 30
 BASE32_ALPHABET = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
 
 
@@ -45,21 +48,20 @@ def decode_seed(seed: str) -> bytes:
     return decoded
 
 
-def generate_totp(seed: str, timestamp: int | float | None = None) -> str:
+def generate_totp(key: bytes, timestamp: int | float | None = None) -> str:
     current_time = time.time() if timestamp is None else float(timestamp)
     if current_time < 0:
         raise ValueError("timestamp must not be negative")
 
-    key = decode_seed(normalize_seed(seed))
-    counter = int(current_time) // 30
+    counter = int(current_time) // PERIOD
     digest = hmac.new(
         key,
         struct.pack(">Q", counter),
-        hashlib.sha256,
+        ALGORITHM,
     ).digest()
     offset = digest[-1] & 0x0F
     binary = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
-    return f"{binary % 1_000_000:06d}"
+    return f"{binary % (10 ** DIGITS):0{DIGITS}d}"
 
 
 def read_seed(argument: str | None) -> str:
@@ -73,8 +75,8 @@ def read_seed(argument: str | None) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Generate the current 6-digit SHA-256 TOTP. "
-            "On success, stdout contains only the code."
+            "Continuously display the current 6-digit SHA-256 TOTP "
+            "and seconds remaining. Stop with Ctrl+C."
         )
     )
     parser.add_argument(
@@ -82,25 +84,37 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         help="Base32 seed or otpauth:// URI; stdin is used when omitted",
     )
-    parser.add_argument(
-        "--timestamp",
-        type=float,
-        default=None,
-        help=argparse.SUPPRESS,
-    )
     return parser
+
+
+def render(code: str, remaining: int) -> None:
+    text = f"TOTP: {code}  残り {remaining:2d}秒"
+    if sys.stdout.isatty():
+        print(f"\r\033[2K{text}", end="", flush=True)
+    else:
+        print(text, flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
     try:
-        code = generate_totp(read_seed(args.seed), args.timestamp)
+        key = decode_seed(normalize_seed(read_seed(args.seed)))
     except (EOFError, ValueError) as exc:
         print(exc, file=sys.stderr)
         return 1
 
-    print(code)
-    return 0
+    try:
+        while True:
+            now = time.time()
+            code = generate_totp(key, now)
+            remaining = PERIOD - (int(now) % PERIOD)
+            render(code, remaining)
+            time.sleep(max(0.05, 1.0 - (time.time() % 1.0)))
+    except KeyboardInterrupt:
+        if sys.stdout.isatty():
+            print()
+        return 0
 
 
 if __name__ == "__main__":
