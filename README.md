@@ -41,6 +41,7 @@ TOTPシードと大学アカウント情報は、マスターパスワードか�
 
 ## ツールの使用方法
 
-root化済みAndroid等からPhoneFactorを抜き出し、`extract_phonefactor_seed.py`と同じ場所に置いてください。
+root化済みAndroidやAndroid Emulator等から`PhoneFactor`を抜き出し、`extract_phonefactor_seed.py`と同じ場所に置いてください。
+`PhoneFactor`はAndroidの場合は`/data/user/0/com.azure.authenticator/databases`にあります。
 スクリプトの実行後、`oath_secret_key`をコピーします。これがシードです。
 その後、`generate_totp.py`を実行し、Seed:が出たら、キーを入力してください。
