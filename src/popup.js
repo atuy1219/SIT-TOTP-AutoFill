@@ -41,16 +41,25 @@ async function refreshStatus() {
   clearInterval(refreshTimer);
 
   if (!status.initialized) {
+    byId("setupMessage").textContent = "初期設定が必要です。";
     showPanel("setupPanel");
     return;
   }
 
   if (!status.unlocked) {
+    if (status.unlockMode === "device") {
+      byId("setupMessage").textContent =
+        "端末内の自動解除キーを読み込めません。設定からデータを削除し、再設定してください。";
+      showPanel("setupPanel");
+      return;
+    }
+
     showPanel("unlockPanel");
     byId("unlockPassword").focus();
     return;
   }
 
+  byId("lockButton").hidden = status.unlockMode === "device";
   showPanel("codePanel");
   await refreshCode();
   refreshTimer = setInterval(refreshCode, 1000);
