@@ -17,12 +17,12 @@ Android EmulatorではQRコードを読み取れないため、登録画面で `
 
 ### 3. Pythonをインストールする
 
-Python 3をインストールします。
+Pythonがインストールされていない場合はPython 3をインストールします。
 
 Windowsでは、PowerShellまたはコマンドプロンプトからwingetを使用できます。
 
 ```powershell
-winget install --id Python.Python.3.13 -e
+winget install --id Python.Python -e
 ```
 
 インストール後、次のコマンドでPythonが利用できることを確認してください。
