@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SIT ADFS TOTP Autofill 設定</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body>
+  <main class="options">
+    <header>
+      <img src="icons/icon48.png" alt="">
+      <div>
+        <h1>SIT ADFS TOTP Autofill</h1>
+        <div class="muted">ID・Azure MFA選択・TOTPの3画面対応</div>
+      </div>
+    </header>
+
+    <section id="initializePanel" class="card" hidden>
+      <h2>初期設定</h2>
+      <p class="warning">
+        大学パスワードとTOTPシードは認証情報です。この端末内だけで扱ってください。
+      </p>
+
+      <label>
+        大学ユーザー名
+        <input id="initialUsername" type="text" autocomplete="username"
+          placeholder="al00000 または al00000@sic">
+      </label>
+      <label>
+        大学アカウントのパスワード
+        <input id="initialAccountPassword" type="password" autocomplete="off">
+      </label>
+      <label>
+        32文字のBase32シード
+        <input id="initialSecret" type="password" autocomplete="off" spellcheck="false"
+          placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
+      </label>
+
+      <div class="grid">
+        <label>
+          保管庫のマスターパスワード
+          <input id="initialMasterPassword" type="password" autocomplete="new-password">
+        </label>
+        <label>
+          マスターパスワードの確認
+          <input id="initialMasterPasswordConfirm" type="password" autocomplete="new-password">
+        </label>
+      </div>
+
+      <label class="checkbox">
+        <input id="initialAutoLogin" type="checkbox" checked>
+        IDとパスワードを入力して自動送信する
+      </label>
+      <label class="checkbox">
+        <input id="initialKeepSignedIn" type="checkbox" checked>
+        「サインアウトしない」を有効にする
+      </label>
+      <label class="checkbox">
+        <input id="initialAutoSelectProvider" type="checkbox" checked>
+        Azure Multi-Factor Authenticationを自動選択する
+      </label>
+      <label class="checkbox">
+        <input id="initialAutoFill" type="checkbox" checked>
+        確認コードを自動入力する
+      </label>
+      <label class="checkbox">
+        <input id="initialAutoSubmit" type="checkbox" checked>
+        確認コード入力後に自動送信する
+      </label>
+
+      <button id="initializeButton">暗号化して保存</button>
+    </section>
+
+    <section id="unlockPanel" class="card" hidden>
+      <h2>保管庫を解除</h2>
+      <label>
+        マスターパスワード
+        <input id="unlockMasterPassword" type="password" autocomplete="current-password">
+      </label>
+      <button id="unlockButton">解除</button>
+    </section>
+
+    <div id="settingsArea" hidden>
+      <section class="card">
+        <h2>大学アカウント</h2>
+        <label>
+          大学ユーザー名
+          <input id="username" type="text" autocomplete="username">
+        </label>
+        <label>
+          パスワードを変更する場合のみ入力
+          <input id="replacementAccountPassword" type="password" autocomplete="off"
+            placeholder="現在のパスワードは表示しません">
+        </label>
+        <label class="checkbox">
+          <input id="clearAccountPassword" type="checkbox">
+          保存済みの大学パスワードを削除する
+        </label>
+        <p id="passwordStatus" class="muted"></p>
+      </section>
+
+      <section class="card">
+        <h2>TOTP</h2>
+        <p><strong>SHA-256・6桁・30秒</strong></p>
+        <label>
+          シードを変更する場合のみ入力
+          <input id="replacementSecret" type="password" autocomplete="off" spellcheck="false"
+            placeholder="現在のシードは表示しません">
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>自動化</h2>
+        <label class="checkbox">
+          <input id="autoLogin" type="checkbox">
+          IDとパスワードを入力して自動送信する
+        </label>
+        <label class="checkbox">
+          <input id="keepSignedIn" type="checkbox">
+          <code>#kmsiInput</code>を有効にする
+        </label>
+        <label class="checkbox">
+          <input id="autoSelectProvider" type="checkbox">
+          <code>#AzureMfaAuthentication</code>を自動選択する
+        </label>
+        <label class="checkbox">
+          <input id="autoFill" type="checkbox">
+          <code>#verificationCodeInput</code>へTOTPを入力する
+        </label>
+        <label class="checkbox">
+          <input id="autoSubmit" type="checkbox">
+          <code>#signInButton</code>で自動送信する
+        </label>
+        <label>
+          有効期限が残り何秒以下なら次のコードを待つか
+          <input id="minRemainingSeconds" type="number" min="0" max="15" step="1">
+        </label>
+        <button id="saveButton">保存</button>
+        <button id="lockButton" class="secondary">ロック</button>
+      </section>
+
+      <section class="card">
+        <h2>データ削除</h2>
+        <button id="resetButton" class="danger">すべて削除</button>
+      </section>
+    </div>
+
+    <p id="message" class="message" aria-live="polite"></p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

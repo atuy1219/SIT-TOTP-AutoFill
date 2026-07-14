@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SIT ADFS TOTP Autofill</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="popup">
+  <main>
+    <header>
+      <img src="icons/icon48.png" alt="">
+      <div>
+        <h1>SIT ADFS TOTP</h1>
+        <div class="muted">SHA-256・6桁・30秒</div>
+      </div>
+    </header>
+
+    <section id="setupPanel" class="card" hidden>
+      <p>初期設定が必要です。</p>
+      <button id="openOptionsFromSetup">設定を開く</button>
+    </section>
+
+    <section id="unlockPanel" class="card" hidden>
+      <label>
+        マスターパスワード
+        <input id="unlockPassword" type="password" autocomplete="current-password">
+      </label>
+      <button id="unlockButton">解除</button>
+    </section>
+
+    <section id="codePanel" class="card" hidden>
+      <div id="code" class="code">------</div>
+      <div class="row between">
+        <span class="muted">現在のTOTP</span>
+        <span id="remaining" class="muted">--秒</span>
+      </div>
+      <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
+      <div class="row wrap">
+        <button id="copyButton">コピー</button>
+        <button id="lockButton" class="secondary">ロック</button>
+      </div>
+    </section>
+
+    <button id="optionsButton" class="secondary">設定</button>
+    <p id="message" class="message" aria-live="polite"></p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
