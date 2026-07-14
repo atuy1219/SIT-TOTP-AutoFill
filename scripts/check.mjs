@@ -44,8 +44,8 @@ try {
 if (manifest.manifest_version !== 3) {
   fail("manifest_version must be 3.");
 }
-if (manifest.version !== "0.3.1") {
-  fail(`manifest version (${manifest.version}) does not match package version (0.3.1).`);
+if (manifest.version !== "0.4.0") {
+  fail(`manifest version (${manifest.version}) does not match package version (0.4.0).`);
 }
 
 const referencedFiles = new Set();
