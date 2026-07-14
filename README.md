@@ -33,7 +33,7 @@ python --version
 
 ### 4. TOTPシードを取り出す
 
-Microsoft Authenticatorのデータベース `PhoneFactor` を、`tools/extract_phonefactor_seed.py` と同じディレクトリに配置します。
+Microsoft Authenticatorのデータベース `PhoneFactor`、`PhoneFactor-wal`、`PhoneFactor-shm`を、`tools/extract_phonefactor_seed.py` と同じディレクトリに配置します。
 
 Android上の保存場所は次のとおりです。
 
