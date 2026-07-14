@@ -1,6 +1,6 @@
 {
   "name": "sit-totp-autofill",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Chrome extension that automates SIT ADFS sign-in and SHA-256 TOTP entry.",
   "type": "module",
