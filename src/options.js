@@ -18,6 +18,32 @@ function showState(state) {
   byId("settingsArea").hidden = state !== "settings";
 }
 
+function updateInitialMasterPasswordMode() {
+  const useMasterPassword = byId("initialUseMasterPassword").checked;
+  byId("initialMasterPasswordFields").hidden = !useMasterPassword;
+  byId("deviceUnlockWarning").hidden = useMasterPassword;
+  byId("initialMasterPassword").disabled = !useMasterPassword;
+  byId("initialMasterPasswordConfirm").disabled = !useMasterPassword;
+
+  if (!useMasterPassword) {
+    byId("initialMasterPassword").value = "";
+    byId("initialMasterPasswordConfirm").value = "";
+  }
+}
+
+function updateInitialAutoLoginMode() {
+  const autoLogin = byId("initialAutoLogin").checked;
+  byId("initialUsername").disabled = !autoLogin;
+  byId("initialAccountPassword").disabled = !autoLogin;
+  byId("initialKeepSignedIn").disabled = !autoLogin;
+
+  if (!autoLogin) {
+    byId("initialUsername").value = "";
+    byId("initialAccountPassword").value = "";
+    byId("initialKeepSignedIn").checked = false;
+  }
+}
+
 function readInitialSettings() {
   return {
     autoLogin: byId("initialAutoLogin").checked,
@@ -45,12 +71,21 @@ async function refresh() {
 
   if (!status.initialized) {
     showState("initialize");
+    updateInitialMasterPasswordMode();
+    updateInitialAutoLoginMode();
     return;
   }
 
   if (!status.unlocked) {
+    const deviceMode = status.unlockMode === "device";
     showState("unlock");
-    byId("unlockMasterPassword").focus();
+    byId("unlockDescription").textContent = deviceMode
+      ? "端末内の自動解除キーを読み込めません。データを削除して初期設定をやり直してください。"
+      : "マスターパスワードを入力してください。";
+    byId("unlockMasterPasswordLabel").hidden = deviceMode;
+    byId("unlockButton").hidden = deviceMode;
+    byId("resetLockedButton").hidden = !deviceMode;
+    if (!deviceMode) byId("unlockMasterPassword").focus();
     return;
   }
 
@@ -73,19 +108,39 @@ async function refresh() {
   byId("autoSubmit").checked = config.settings.autoSubmit !== false;
   byId("minRemainingSeconds").value =
     String(config.settings.minRemainingSeconds);
+
+  const deviceMode = config.unlockMode === "device";
+  byId("unlockModeStatus").textContent = deviceMode
+    ? "マスターパスワードなし：端末内の自動解除キーを使用します。"
+    : "マスターパスワードで暗号化されています。";
+  byId("unlockModeStatus").classList.toggle("warning", deviceMode);
+  byId("lockButton").hidden = deviceMode;
 }
 
+byId("initialUseMasterPassword").addEventListener(
+  "change",
+  updateInitialMasterPasswordMode
+);
+byId("initialAutoLogin").addEventListener("change", updateInitialAutoLoginMode);
+
 byId("initializeButton").addEventListener("click", async () => {
+  const useMasterPassword = byId("initialUseMasterPassword").checked;
   const masterPassword = byId("initialMasterPassword").value;
-  if (masterPassword !== byId("initialMasterPasswordConfirm").value) {
+
+  if (
+    useMasterPassword &&
+    masterPassword !== byId("initialMasterPasswordConfirm").value
+  ) {
     message("マスターパスワードの確認が一致しません。", true);
     return;
   }
 
+  const autoLogin = byId("initialAutoLogin").checked;
   const result = await send("initialize", {
+    useMasterPassword,
     masterPassword,
-    username: byId("initialUsername").value,
-    accountPassword: byId("initialAccountPassword").value,
+    username: autoLogin ? byId("initialUsername").value : "",
+    accountPassword: autoLogin ? byId("initialAccountPassword").value : "",
     secret: byId("initialSecret").value,
     settings: readInitialSettings()
   });
@@ -154,6 +209,13 @@ byId("lockButton").addEventListener("click", async () => {
   await refresh();
 });
 
+byId("resetLockedButton").addEventListener("click", async () => {
+  if (!confirm("暗号化保管庫と設定を完全に削除しますか？")) return;
+  await send("reset");
+  message("すべて削除しました。");
+  await refresh();
+});
+
 byId("resetButton").addEventListener("click", async () => {
   if (!confirm("暗号化保管庫と設定を完全に削除しますか？")) return;
   await send("reset");
@@ -161,4 +223,6 @@ byId("resetButton").addEventListener("click", async () => {
   await refresh();
 });
 
+updateInitialMasterPasswordMode();
+updateInitialAutoLoginMode();
 refresh().catch((error) => message(error.message, true));
