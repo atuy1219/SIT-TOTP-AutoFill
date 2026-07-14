@@ -38,3 +38,9 @@ npm run package
 ## セキュリティ上の注意
 
 TOTPシードと大学アカウント情報は、マスターパスワードからPBKDF2-SHA256で導出した鍵を使用し、AES-GCMで暗号化してChromeのローカルストレージに保存します。マスターパスワード、TOTPシード、大学アカウント情報をソースコードやIssueへ記載しないでください。
+
+## ツールの使用方法
+
+root化済みAndroid等からPhoneFactorを抜き出し、`extract_phonefactor_seed.py`と同じ場所に置いてください。
+スクリプトの実行後、`oath_secret_key`をコピーします。これがシードです。
+その後、`generate_totp.py`を実行し、Seed:が出たら、キーを入力してください。
