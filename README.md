@@ -2,6 +2,65 @@
 
 芝浦工業大学のADFSログインで、大学アカウントの入力、Azure MFAプロバイダーの選択、SHA-256 TOTPの入力を補助するChrome Manifest V3拡張機能です。
 
+## 使用方法
+
+### 1. Microsoftアカウントのサインイン方法を変更する
+
+1. [セキュリティ情報](https://mysignins.microsoft.com/security-info)にアクセスします。
+2. 「最も適したものが利用できない場合のサインイン方法」を、`Authenticator アプリまたはハードウェア トークン - コード` に変更します。
+
+### 2. Microsoft Authenticatorを登録する
+
+root化済みのAndroid端末、またはrootを利用できるAndroid EmulatorにMicrosoft Authenticatorをインストールし、大学アカウントを登録します。
+
+Android EmulatorではQRコードを読み取れないため、登録画面で `Can't scan the QR code?` を選択し、表示された情報をテキストで入力してください。
+
+### 3. Pythonをインストールする
+
+Python 3をインストールします。
+
+Windowsでは、PowerShellまたはコマンドプロンプトからwingetを使用できます。
+
+```powershell
+winget install --id Python.Python.3.13 -e
+```
+
+インストール後、次のコマンドでPythonが利用できることを確認してください。
+
+```bash
+python --version
+```
+
+### 4. TOTPシードを取り出す
+
+Microsoft Authenticatorのデータベース `PhoneFactor` を、`tools/extract_phonefactor_seed.py` と同じディレクトリに配置します。
+
+Android上の保存場所は次のとおりです。
+
+```text
+/data/user/0/com.azure.authenticator/databases/PhoneFactor
+```
+
+リポジトリのルートディレクトリで、次のコマンドを実行します。
+
+```bash
+python tools/extract_phonefactor_seed.py
+```
+
+出力された `oath_secret_key` のうち、自分の大学アカウントに対応する32文字の英数字がTOTPシードです。
+
+> [!CAUTION]
+> TOTPシードは認証コードを生成できる秘密情報です。第三者への送信、画面共有、Issueへの投稿、ソースコードへの記載など、外部への公開は絶対にしないでください。
+
+### 5. 拡張機能を設定する
+
+1. 本拡張機能をChromeにインストールします。ソースコードから利用する場合は、後述の「ビルド」を参照してください。
+2. 拡張機能の設定画面を開きます。
+3. 先ほど取り出したTOTPシードを入力します。
+4. 必要に応じて学籍番号とパスワードを入力し、設定を保存します。学籍番号とパスワードの入力は任意です。
+
+以上で設定は完了です。
+
 ## 必要環境
 
 - Node.js 18以上
@@ -38,10 +97,3 @@ npm run package
 ## セキュリティ上の注意
 
 TOTPシードと大学アカウント情報は、マスターパスワードからPBKDF2-SHA256で導出した鍵を使用し、AES-GCMで暗号化してChromeのローカルストレージに保存します。マスターパスワード、TOTPシード、大学アカウント情報をソースコードやIssueへ記載しないでください。
-
-## ツールの使用方法
-
-root化済みAndroidやAndroid Emulator等から`PhoneFactor`を抜き出し、`extract_phonefactor_seed.py`と同じ場所に置いてください。
-`PhoneFactor`はAndroidの場合は`/data/user/0/com.azure.authenticator/databases`にあります。
-スクリプトの実行後、`oath_secret_key`をコピーします。これがシードです。
-その後、`generate_totp.py`を実行し、Seed:が出たら、キーを入力してください。
