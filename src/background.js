@@ -1,6 +1,7 @@
 "use strict";
 
 const LOCAL_VAULT_KEY = "sitAdfsEncryptedVault";
+const LOCAL_DEVICE_KEY = "sitAdfsDeviceKey";
 const SESSION_KEY = "sitAdfsSessionKey";
 const ITERATIONS = 310000;
 const TARGET_HOST = "adfs.sic.shibaura-it.ac.jp";
@@ -73,6 +74,10 @@ function normalizeSettings(value = {}) {
         ? threshold
         : DEFAULT_SETTINGS.minRemainingSeconds
   };
+}
+
+function getUnlockMode(vault) {
+  return vault?.unlockMode === "device" ? "device" : "password";
 }
 
 function bytesToBase64(bytes) {
@@ -170,17 +175,17 @@ async function deriveVaultKey(password, salt, extractable = true) {
   );
 }
 
-async function importVaultKey(rawKey) {
+async function importVaultKey(rawKey, extractable = false) {
   return crypto.subtle.importKey(
     "raw",
     rawKey,
     { name: "AES-GCM" },
-    false,
+    extractable,
     ["encrypt", "decrypt"]
   );
 }
 
-async function encryptVault(data, key, salt) {
+async function encryptVault(data, key, salt, unlockMode = "password") {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = new TextEncoder().encode(JSON.stringify(data));
   const ciphertext = await crypto.subtle.encrypt(
@@ -190,9 +195,10 @@ async function encryptVault(data, key, salt) {
   );
 
   return {
-    version: 1,
-    kdf: "PBKDF2-SHA256",
-    iterations: ITERATIONS,
+    version: 2,
+    unlockMode,
+    kdf: unlockMode === "device" ? "DEVICE-KEY" : "PBKDF2-SHA256",
+    iterations: unlockMode === "device" ? 0 : ITERATIONS,
     salt: bytesToBase64(salt),
     iv: bytesToBase64(iv),
     ciphertext: bytesToBase64(new Uint8Array(ciphertext))
@@ -243,11 +249,30 @@ async function getSessionKey() {
   return encoded ? importVaultKey(base64ToBytes(encoded)) : null;
 }
 
+async function getDeviceKey() {
+  const stored = await chrome.storage.local.get(LOCAL_DEVICE_KEY);
+  const encoded = stored[LOCAL_DEVICE_KEY];
+  return encoded
+    ? { encoded, key: await importVaultKey(base64ToBytes(encoded)) }
+    : null;
+}
+
+async function storeSessionKey(encoded) {
+  await chrome.storage.session.set({ [SESSION_KEY]: encoded });
+}
+
 async function requireUnlocked() {
   const vault = await getEncryptedVault();
   if (!vault) throw new Error("初期設定が完了していません。");
 
-  const key = await getSessionKey();
+  let key = await getSessionKey();
+  if (!key && getUnlockMode(vault) === "device") {
+    const deviceKey = await getDeviceKey();
+    if (deviceKey) {
+      key = deviceKey.key;
+      await storeSessionKey(deviceKey.encoded);
+    }
+  }
   if (!key) throw new Error("保管庫がロックされています。");
 
   try {
@@ -255,7 +280,11 @@ async function requireUnlocked() {
     return { vault, key, data };
   } catch {
     await chrome.storage.session.remove(SESSION_KEY);
-    throw new Error("保管庫を再度解除してください。");
+    throw new Error(
+      getUnlockMode(vault) === "device"
+        ? "端末内の自動解除キーを使用できません。設定をリセットしてください。"
+        : "保管庫を再度解除してください。"
+    );
   }
 }
 
@@ -264,7 +293,8 @@ async function saveVaultData(data, key, existingVault) {
   const encrypted = await encryptVault(
     data,
     key,
-    base64ToBytes(existingVault.salt)
+    base64ToBytes(existingVault.salt),
+    getUnlockMode(existingVault)
   );
   await chrome.storage.local.set({ [LOCAL_VAULT_KEY]: encrypted });
 }
@@ -286,9 +316,19 @@ function isTargetSender(sender) {
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case "status": {
-      const initialized = Boolean(await getEncryptedVault());
-      const unlocked = initialized && Boolean(await getSessionKey());
-      return { ok: true, initialized, unlocked };
+      const vault = await getEncryptedVault();
+      const initialized = Boolean(vault);
+      const unlockMode = initialized ? getUnlockMode(vault) : null;
+      let unlocked = initialized && Boolean(await getSessionKey());
+
+      if (initialized && !unlocked && unlockMode === "device") {
+        try {
+          await requireUnlocked();
+          unlocked = true;
+        } catch {}
+      }
+
+      return { ok: true, initialized, unlocked, unlockMode };
     }
 
     case "initialize": {
@@ -296,8 +336,10 @@ async function handleMessage(message, sender) {
         throw new Error("保管庫は既に作成されています。");
       }
 
+      const useMasterPassword = message.useMasterPassword !== false;
+      const unlockMode = useMasterPassword ? "password" : "device";
       const masterPassword = String(message.masterPassword || "");
-      if (masterPassword.length < 8) {
+      if (useMasterPassword && masterPassword.length < 8) {
         throw new Error("マスターパスワードは8文字以上にしてください。");
       }
 
@@ -309,9 +351,18 @@ async function handleMessage(message, sender) {
       );
       const secret = validateSecret(message.secret);
       const salt = crypto.getRandomValues(new Uint8Array(16));
-      const key = await deriveVaultKey(masterPassword, salt, true);
-      const now = Date.now();
+      let key;
+      let rawKey;
 
+      if (useMasterPassword) {
+        key = await deriveVaultKey(masterPassword, salt, true);
+        rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+      } else {
+        rawKey = crypto.getRandomValues(new Uint8Array(32));
+        key = await importVaultKey(rawKey);
+      }
+
+      const now = Date.now();
       const data = {
         version: 1,
         secret,
@@ -322,20 +373,28 @@ async function handleMessage(message, sender) {
         updatedAt: now
       };
 
-      const encrypted = await encryptVault(data, key, salt);
-      const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+      const encrypted = await encryptVault(data, key, salt, unlockMode);
+      const encodedKey = bytesToBase64(rawKey);
 
       await chrome.storage.local.set({ [LOCAL_VAULT_KEY]: encrypted });
-      await chrome.storage.session.set({
-        [SESSION_KEY]: bytesToBase64(rawKey)
-      });
+      if (unlockMode === "device") {
+        await chrome.storage.local.set({ [LOCAL_DEVICE_KEY]: encodedKey });
+      } else {
+        await chrome.storage.local.remove(LOCAL_DEVICE_KEY);
+      }
+      await storeSessionKey(encodedKey);
 
-      return { ok: true };
+      return { ok: true, unlockMode };
     }
 
     case "unlock": {
       const vault = await getEncryptedVault();
       if (!vault) throw new Error("保管庫がありません。");
+
+      if (getUnlockMode(vault) === "device") {
+        await requireUnlocked();
+        return { ok: true, unlockMode: "device" };
+      }
 
       const masterPassword = String(message.masterPassword || "");
       const key = await deriveVaultKey(
@@ -351,10 +410,8 @@ async function handleMessage(message, sender) {
       }
 
       const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
-      await chrome.storage.session.set({
-        [SESSION_KEY]: bytesToBase64(rawKey)
-      });
-      return { ok: true };
+      await storeSessionKey(bytesToBase64(rawKey));
+      return { ok: true, unlockMode: "password" };
     }
 
     case "lock":
@@ -362,9 +419,10 @@ async function handleMessage(message, sender) {
       return { ok: true };
 
     case "getConfig": {
-      const { data } = await requireUnlocked();
+      const { vault, data } = await requireUnlocked();
       return {
         ok: true,
+        unlockMode: getUnlockMode(vault),
         username: data.username,
         passwordConfigured: Boolean(data.password),
         settings: normalizeSettings(data.settings),
@@ -474,7 +532,7 @@ async function handleMessage(message, sender) {
     }
 
     case "reset": {
-      await chrome.storage.local.remove(LOCAL_VAULT_KEY);
+      await chrome.storage.local.remove([LOCAL_VAULT_KEY, LOCAL_DEVICE_KEY]);
       await chrome.storage.session.remove(SESSION_KEY);
       return { ok: true };
     }
