@@ -23,21 +23,32 @@
       </p>
 
       <label>
-        大学ユーザー名
+        大学ユーザー名（任意）
         <input id="initialUsername" type="text" autocomplete="username"
           placeholder="al00000 または al00000@sic">
       </label>
       <label>
-        大学アカウントのパスワード
+        大学アカウントのパスワード（任意）
         <input id="initialAccountPassword" type="password" autocomplete="off">
       </label>
+      <p class="muted">
+        IDとパスワードを保存しない場合は、両方を空欄にして自動ログインを無効にしてください。
+      </p>
       <label>
         32文字のBase32シード
         <input id="initialSecret" type="password" autocomplete="off" spellcheck="false"
           placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
       </label>
 
-      <div class="grid">
+      <label class="checkbox">
+        <input id="initialUseMasterPassword" type="checkbox" checked>
+        マスターパスワードで保護する（推奨）
+      </label>
+      <p id="deviceUnlockWarning" class="warning" hidden>
+        無効にすると、端末内へ自動解除キーを保存します。Chromeプロファイルを操作できる第三者から認証情報を保護できません。
+      </p>
+
+      <div id="initialMasterPasswordFields" class="grid">
         <label>
           保管庫のマスターパスワード
           <input id="initialMasterPassword" type="password" autocomplete="new-password">
@@ -69,16 +80,18 @@
         確認コード入力後に自動送信する
       </label>
 
-      <button id="initializeButton">暗号化して保存</button>
+      <button id="initializeButton">保存</button>
     </section>
 
     <section id="unlockPanel" class="card" hidden>
       <h2>保管庫を解除</h2>
-      <label>
+      <p id="unlockDescription" class="muted"></p>
+      <label id="unlockMasterPasswordLabel">
         マスターパスワード
         <input id="unlockMasterPassword" type="password" autocomplete="current-password">
       </label>
       <button id="unlockButton">解除</button>
+      <button id="resetLockedButton" class="danger" hidden>データを削除して再設定</button>
     </section>
 
     <div id="settingsArea" hidden>
@@ -108,6 +121,14 @@
           <input id="replacementSecret" type="password" autocomplete="off" spellcheck="false"
             placeholder="現在のシードは表示しません">
         </label>
+      </section>
+
+      <section class="card">
+        <h2>保護方式</h2>
+        <p id="unlockModeStatus"></p>
+        <p class="muted">
+          保護方式を変更するには「すべて削除」後に初期設定をやり直してください。
+        </p>
       </section>
 
       <section class="card">
