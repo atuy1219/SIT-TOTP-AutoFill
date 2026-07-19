@@ -510,14 +510,6 @@ async function handleMessage(message, sender) {
       }
 
       const result = await generateTotp(data.secret);
-      if (result.remaining <= settings.minRemainingSeconds) {
-        return {
-          ok: false,
-          reason: "wait",
-          waitMs: (result.remaining + 1) * 1000
-        };
-      }
-
       return {
         ok: true,
         ...result,
