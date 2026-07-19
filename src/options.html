@@ -39,7 +39,7 @@
         <input id="initialSecret" type="password" autocomplete="off" spellcheck="false"
           placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
       </label>
-      <button id="initialPreviewButton" type="button" class="secondary">現在のコードを確認</button>
+      <button id="initialPreviewButton" type="button" class="secondary" hidden>現在のコードを確認</button>
       <div id="initialPreview" class="totp-preview" hidden>
         <div>
           <div class="muted">Microsoft Authenticatorのコードと一致することを確認してください</div>
@@ -59,11 +59,12 @@
       <div id="initialMasterPasswordFields" class="grid">
         <label>
           保管庫のマスターパスワード
-          <input id="initialMasterPassword" type="password" autocomplete="new-password">
+          <input id="initialMasterPassword" type="password" autocomplete="new-password" minlength="6">
+          <span id="initialMasterPasswordRequirement" class="input-requirement" hidden>6文字以上。数字のみでも使用できます。</span>
         </label>
         <label>
           マスターパスワードの確認
-          <input id="initialMasterPasswordConfirm" type="password" autocomplete="new-password">
+          <input id="initialMasterPasswordConfirm" type="password" autocomplete="new-password" minlength="6">
         </label>
       </div>
 
@@ -205,8 +206,19 @@
       <button id="importButton" class="secondary">インポート</button>
     </section>
 
+    <dialog id="initialCodeDialog" class="code-dialog">
+      <h2>現在のコードを確認</h2>
+      <p class="muted">Microsoft Authenticatorに表示されているコードと一致することを確認してください。</p>
+      <div class="saved-code-row">
+        <strong id="initialCodeDialogCode" class="dialog-code">------</strong>
+        <span id="initialCodeDialogRemaining" class="muted">残り--秒</span>
+      </div>
+      <button id="initialCodeDialogClose" type="button">閉じる</button>
+    </dialog>
+
     <p id="message" class="message" aria-live="polite"></p>
   </main>
+  <script src="visibility.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
