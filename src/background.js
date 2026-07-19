@@ -12,8 +12,7 @@ const DEFAULT_SETTINGS = Object.freeze({
   keepSignedIn: true,
   autoSelectProvider: true,
   autoFill: true,
-  autoSubmit: true,
-  minRemainingSeconds: 5
+  autoSubmit: true
 });
 
 function normalizeBase32(value) {
@@ -62,17 +61,12 @@ function validateCredentials(username, password, required = false) {
 }
 
 function normalizeSettings(value = {}) {
-  const threshold = Number(value.minRemainingSeconds);
   return {
     autoLogin: value.autoLogin !== false,
     keepSignedIn: value.keepSignedIn !== false,
     autoSelectProvider: value.autoSelectProvider !== false,
     autoFill: value.autoFill !== false,
-    autoSubmit: value.autoSubmit !== false,
-    minRemainingSeconds:
-      Number.isInteger(threshold) && threshold >= 0 && threshold <= 15
-        ? threshold
-        : DEFAULT_SETTINGS.minRemainingSeconds
+    autoSubmit: value.autoSubmit !== false
   };
 }
 

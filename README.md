@@ -1,6 +1,6 @@
 # SIT TOTP AutoFill
 
-芝浦工業大学のADFSログインで、大学アカウントの入力、Azure MFAプロバイダーの選択、SHA-256 TOTPの入力を補助するChromium（Chrome・Edgeなど）およびFirefox向けManifest V3拡張機能です。
+芝浦工業大学のADFSログインで、大学アカウントの入力、Azure MFAプロバイダーの選択、SHA-256 TOTPの入力を補助するChromium（Chrome・Edgeなど）およびFirefox向け拡張機能です。
 
 ## 使用方法
 
@@ -126,8 +126,8 @@ npm run package
 `release/` に次の配布ファイルを生成します。
 
 ```text
-sit-adfs-totp-autofill-chromium-mv3-v<version>.zip
-sit-adfs-totp-autofill-firefox-mv3-v<version>.zip
+sit-adfs-totp-autofill-chromium-v<version>.zip
+sit-adfs-totp-autofill-firefox-v<version>.zip
 ```
 
 ## GitHub Actions

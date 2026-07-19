@@ -254,11 +254,6 @@
     }
 
     if (!response?.ok) {
-      if (response?.reason === "wait") {
-        showStatus("期限直前のため、次のコードを待っています。", "warning");
-        schedule(Math.max(500, Number(response.waitMs) || 1000));
-        return true;
-      }
       if (response?.reason === "disabled") return true;
       explainError(response?.error);
       return true;
