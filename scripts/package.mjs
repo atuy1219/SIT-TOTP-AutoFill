@@ -7,16 +7,15 @@ import process from "node:process";
 const root = path.resolve(import.meta.dirname, "..");
 const distDir = path.join(root, "dist");
 const releaseDir = path.join(root, "release");
+const targets = ["chromium", "firefox"];
 
 const build = spawnSync(process.execPath, [path.join(root, "scripts/build.mjs")], {
   stdio: "inherit"
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const manifest = JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8"));
-const outputPath = path.join(
-  releaseDir,
-  `sit-adfs-totp-autofill-chrome-mv3-v${manifest.version}.zip`
+const manifest = JSON.parse(
+  await readFile(path.join(distDir, "chromium", "manifest.json"), "utf8")
 );
 
 const crcTable = new Uint32Array(256);
@@ -117,8 +116,15 @@ async function createZip(files) {
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
+await rm(releaseDir, { recursive: true, force: true });
 await mkdir(releaseDir, { recursive: true });
-await rm(outputPath, { force: true });
-const files = await collect(distDir);
-await writeFile(outputPath, await createZip(files));
-console.log(`Packaged extension: ${path.relative(root, outputPath)}`);
+
+for (const target of targets) {
+  const outputPath = path.join(
+    releaseDir,
+    `sit-adfs-totp-autofill-${target}-mv3-v${manifest.version}.zip`
+  );
+  const files = await collect(path.join(distDir, target));
+  await writeFile(outputPath, await createZip(files));
+  console.log(`Packaged ${target} extension: ${path.relative(root, outputPath)}`);
+}
