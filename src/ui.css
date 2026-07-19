@@ -10,6 +10,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   margin: 0;
   background: Canvas;
@@ -46,7 +47,8 @@ label {
 }
 input[type="password"],
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+input[type="file"] {
   width: 100%;
   margin-top: 5px;
   border: 1px solid var(--border);
@@ -56,6 +58,7 @@ input[type="number"] {
   color: CanvasText;
   font: inherit;
 }
+input[type="file"] { padding: 8px; }
 input:focus-visible, button:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -107,6 +110,41 @@ button:disabled { opacity: .55; cursor: default; }
   text-align: center;
   margin: 12px 0 4px;
 }
+.code-line {
+  display: grid;
+  grid-template-columns: 1fr 42px;
+  align-items: center;
+  gap: 8px;
+}
+.icon-button {
+  width: 40px;
+  height: 40px;
+  margin: 8px 0 0;
+  padding: 8px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.icon-button:hover {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, Canvas);
+}
+.icon-button.copied {
+  color: white;
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.icon-button svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .progress {
   height: 6px;
   border-radius: 999px;
@@ -123,6 +161,24 @@ button:disabled { opacity: .55; cursor: default; }
   grid-template-columns: 1fr 1fr;
   gap: 0 16px;
 }
+.totp-preview {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: Canvas;
+}
+.preview-code {
+  display: block;
+  margin-top: 5px;
+  font-size: 28px;
+  letter-spacing: .12em;
+  font-variant-numeric: tabular-nums;
+}
 code {
   border-radius: 5px;
   padding: 2px 5px;
@@ -130,4 +186,5 @@ code {
 }
 @media (max-width: 600px) {
   .grid { grid-template-columns: 1fr; }
+  .totp-preview { align-items: flex-start; flex-direction: column; }
 }
