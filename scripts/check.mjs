@@ -73,5 +73,5 @@ for (const file of files.filter((file) => file.endsWith(".js"))) {
 }
 
 if (!process.exitCode) {
-  console.log(`Validated ${files.length} source files for Chromium and Firefox MV3 builds.`);
+  console.log(`Validated ${files.length} source files for Chromium and Firefox builds.`);
 }

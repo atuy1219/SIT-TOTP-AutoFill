@@ -122,7 +122,7 @@ await mkdir(releaseDir, { recursive: true });
 for (const target of targets) {
   const outputPath = path.join(
     releaseDir,
-    `sit-adfs-totp-autofill-${target}-mv3-v${manifest.version}.zip`
+    `sit-adfs-totp-autofill-${target}-v${manifest.version}.zip`
   );
   const files = await collect(path.join(distDir, target));
   await writeFile(outputPath, await createZip(files));

@@ -50,8 +50,7 @@ function readInitialSettings() {
     keepSignedIn: byId("initialKeepSignedIn").checked,
     autoSelectProvider: byId("initialAutoSelectProvider").checked,
     autoFill: byId("initialAutoFill").checked,
-    autoSubmit: byId("initialAutoSubmit").checked,
-    minRemainingSeconds: 5
+    autoSubmit: byId("initialAutoSubmit").checked
   };
 }
 
@@ -61,8 +60,7 @@ function readSettings() {
     keepSignedIn: byId("keepSignedIn").checked,
     autoSelectProvider: byId("autoSelectProvider").checked,
     autoFill: byId("autoFill").checked,
-    autoSubmit: byId("autoSubmit").checked,
-    minRemainingSeconds: Number(byId("minRemainingSeconds").value)
+    autoSubmit: byId("autoSubmit").checked
   };
 }
 
@@ -106,8 +104,6 @@ async function refresh() {
     config.settings.autoSelectProvider !== false;
   byId("autoFill").checked = config.settings.autoFill !== false;
   byId("autoSubmit").checked = config.settings.autoSubmit !== false;
-  byId("minRemainingSeconds").value =
-    String(config.settings.minRemainingSeconds);
 
   const deviceMode = config.unlockMode === "device";
   byId("unlockModeStatus").textContent = deviceMode
