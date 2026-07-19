@@ -1,0 +1,89 @@
+name: Apply requested cleanup on PR
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remove-expiry-wait
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove expiry wait and MV3 labels
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old!r}")
+              file.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_once("src/background.js", "  autoSubmit: true,\n  minRemainingSeconds: 5", "  autoSubmit: true")
+          replace_once("src/background.js", "  const threshold = Number(value.minRemainingSeconds);\n", "")
+          replace_once(
+              "src/background.js",
+              "    autoSubmit: value.autoSubmit !== false,\n    minRemainingSeconds:\n      Number.isInteger(threshold) && threshold >= 0 && threshold <= 15\n        ? threshold\n        : DEFAULT_SETTINGS.minRemainingSeconds",
+              "    autoSubmit: value.autoSubmit !== false"
+          )
+          replace_once(
+              "src/background.js",
+              "    if (result.remaining <= settings.minRemainingSeconds) {\n      return {\n        ok: false,\n        reason: \"wait\",\n        waitMs: (result.remaining + 1) * 1000\n      };\n    }\n\n",
+              ""
+          )
+          replace_once(
+              "src/options.js",
+              "    autoSubmit: byId(\"initialAutoSubmit\").checked,\n    minRemainingSeconds: 5",
+              "    autoSubmit: byId(\"initialAutoSubmit\").checked"
+          )
+          replace_once(
+              "src/options.js",
+              "    autoSubmit: byId(\"autoSubmit\").checked,\n    minRemainingSeconds: Number(byId(\"minRemainingSeconds\").value)",
+              "    autoSubmit: byId(\"autoSubmit\").checked"
+          )
+          replace_once(
+              "src/options.js",
+              "  byId(\"minRemainingSeconds\").value =\n    String(config.settings.minRemainingSeconds);\n",
+              ""
+          )
+          replace_once(
+              "src/options.html",
+              "        <label>\n          有効期限が残り何秒以下なら次のコードを待つか\n          <input id=\"minRemainingSeconds\" type=\"number\" min=\"0\" max=\"15\" step=\"1\">\n        </label>\n",
+              ""
+          )
+          replace_once(
+              "src/content.js",
+              "      if (response?.reason === \"wait\") {\n        showStatus(\"期限直前のため、次のコードを待っています。\", \"warning\");\n        schedule(Math.max(500, Number(response.waitMs) || 1000));\n        return true;\n      }\n",
+              ""
+          )
+          replace_once("README.md", "およびFirefox向けManifest V3拡張機能です。", "およびFirefox向け拡張機能です。")
+          replace_once("README.md", "sit-adfs-totp-autofill-chromium-mv3-v<version>.zip", "sit-adfs-totp-autofill-chromium-v<version>.zip")
+          replace_once("README.md", "sit-adfs-totp-autofill-firefox-mv3-v<version>.zip", "sit-adfs-totp-autofill-firefox-v<version>.zip")
+          replace_once("scripts/package.mjs", "`sit-adfs-totp-autofill-${target}-mv3-v${manifest.version}.zip`", "`sit-adfs-totp-autofill-${target}-v${manifest.version}.zip`")
+          replace_once("scripts/check.mjs", "Validated ${files.length} source files for Chromium and Firefox MV3 builds.", "Validated ${files.length} source files for Chromium and Firefox builds.")
+          PY
+      - run: npm run check
+      - name: Verify removed references
+        run: |
+          ! grep -RInE 'minRemainingSeconds|reason: "wait"|waitMs|Manifest V3|MV3 builds|-mv3-v' README.md src scripts
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md src/background.js src/options.js src/options.html src/content.js scripts/package.mjs scripts/check.mjs
+          git commit -m "Remove TOTP expiry wait and MV3 labels"
+          git push origin HEAD:agent/remove-expiry-wait
