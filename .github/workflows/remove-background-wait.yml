@@ -1,0 +1,51 @@
+name: Remove remaining background wait
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/remove-expiry-wait
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Remove remaining wait branch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/background.js")
+          text = path.read_text(encoding="utf-8")
+          old = '''      if (result.remaining <= settings.minRemainingSeconds) {
+            return {
+              ok: false,
+              reason: "wait",
+              waitMs: (result.remaining + 1) * 1000
+            };
+          }
+
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one remaining wait branch, found {text.count(old)}")
+          path.write_text(text.replace(old, ""), encoding="utf-8")
+          PY
+      - name: Verify cleanup
+        run: |
+          ! grep -RInE 'minRemainingSeconds|reason: "wait"|waitMs|Manifest V3|MV3 builds|-mv3-v' README.md src scripts
+          npm run check
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/background.js
+          git commit -m "Remove remaining TOTP wait branch"
+          git push origin HEAD:agent/remove-expiry-wait
