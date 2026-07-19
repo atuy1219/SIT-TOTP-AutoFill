@@ -39,6 +39,14 @@
         <input id="initialSecret" type="password" autocomplete="off" spellcheck="false"
           placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
       </label>
+      <button id="initialPreviewButton" type="button" class="secondary">現在のコードを確認</button>
+      <div id="initialPreview" class="totp-preview" hidden>
+        <div>
+          <div class="muted">Microsoft Authenticatorのコードと一致することを確認してください</div>
+          <strong id="initialPreviewCode" class="preview-code">------</strong>
+        </div>
+        <span id="initialPreviewRemaining" class="muted">残り--秒</span>
+      </div>
 
       <label class="checkbox">
         <input id="initialUseMasterPassword" type="checkbox" checked>
@@ -158,10 +166,44 @@
       </section>
 
       <section class="card">
+        <h2>暗号化バックアップ</h2>
+        <p class="muted">
+          TOTPシード、大学アカウント、自動化設定を、別のバックアップ用パスワードで再暗号化して書き出します。
+        </p>
+        <div class="grid">
+          <label>
+            バックアップ用パスワード
+            <input id="exportPassword" type="password" autocomplete="new-password">
+          </label>
+          <label>
+            バックアップ用パスワードの確認
+            <input id="exportPasswordConfirm" type="password" autocomplete="new-password">
+          </label>
+        </div>
+        <button id="exportButton">バックアップを書き出す</button>
+      </section>
+
+      <section class="card">
         <h2>データ削除</h2>
         <button id="resetButton" class="danger">すべて削除</button>
       </section>
     </div>
+
+    <section id="importPanel" class="card">
+      <h2>暗号化バックアップをインポート</h2>
+      <p class="muted">
+        インポートすると、バックアップ用パスワードが新しいマスターパスワードになります。既存の設定がある場合は上書きされます。
+      </p>
+      <label>
+        バックアップファイル
+        <input id="importFile" type="file" accept="application/json,.json">
+      </label>
+      <label>
+        バックアップ用パスワード
+        <input id="importPassword" type="password" autocomplete="current-password">
+      </label>
+      <button id="importButton" class="secondary">インポート</button>
+    </section>
 
     <p id="message" class="message" aria-live="polite"></p>
   </main>

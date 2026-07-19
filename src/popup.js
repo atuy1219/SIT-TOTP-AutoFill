@@ -2,6 +2,7 @@
 
 const byId = (id) => document.getElementById(id);
 let refreshTimer = null;
+let copyResetTimer = null;
 let lastCode = "";
 
 async function send(type, extra = {}) {
@@ -18,6 +19,14 @@ function message(text, error = false) {
   const element = byId("message");
   element.textContent = text;
   element.classList.toggle("error", error);
+}
+
+function resetCopyButton() {
+  clearTimeout(copyResetTimer);
+  const button = byId("copyButton");
+  button.classList.remove("copied");
+  button.title = "コードをコピー";
+  button.setAttribute("aria-label", "コードをコピー");
 }
 
 async function refreshCode() {
@@ -39,6 +48,7 @@ async function refreshCode() {
 async function refreshStatus() {
   const status = await send("status");
   clearInterval(refreshTimer);
+  resetCopyButton();
 
   if (!status.initialized) {
     byId("setupMessage").textContent = "初期設定が必要です。";
@@ -49,7 +59,7 @@ async function refreshStatus() {
   if (!status.unlocked) {
     if (status.unlockMode === "device") {
       byId("setupMessage").textContent =
-        "端末内の自動解除キーを読み込めません。設定からデータを削除し、再設定してください。";
+        "端末内の自動解除キーを読み込めません。設定からバックアップをインポートするか、再設定してください。";
       showPanel("setupPanel");
       return;
     }
@@ -84,8 +94,18 @@ byId("unlockPassword").addEventListener("keydown", (event) => {
 
 byId("copyButton").addEventListener("click", async () => {
   if (!lastCode) return;
-  await navigator.clipboard.writeText(lastCode);
-  message("コードをコピーしました。");
+  try {
+    await navigator.clipboard.writeText(lastCode);
+    const button = byId("copyButton");
+    button.classList.add("copied");
+    button.title = "コピーしました";
+    button.setAttribute("aria-label", "コピーしました");
+    message("コードをコピーしました。");
+    clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(resetCopyButton, 1400);
+  } catch {
+    message("クリップボードへコピーできませんでした。", true);
+  }
 });
 
 byId("lockButton").addEventListener("click", async () => {
