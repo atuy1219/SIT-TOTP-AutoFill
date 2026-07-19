@@ -1,0 +1,79 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag. Leave empty to use v<manifest version>.
+        required: false
+        type: string
+      title:
+        description: Release title. Leave empty to generate one from the tag.
+        required: false
+        type: string
+      draft:
+        description: Create the release as a draft.
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: Mark the release as a prerelease.
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run check
+      - run: npm run package
+      - id: metadata
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_TITLE: ${{ inputs.title }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "JSON.parse(require('fs').readFileSync('src/manifest.json', 'utf8')).version")"
+          tag="${INPUT_TAG:-v$version}"
+          title="${INPUT_TITLE:-SIT TOTP AutoFill $tag}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "title=$title" >> "$GITHUB_OUTPUT"
+      - name: Create release or replace its assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.metadata.outputs.title }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+          RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/*.zip --clobber
+            exit 0
+          fi
+
+          args=(release create "$RELEASE_TAG")
+          for file in release/*.zip; do
+            args+=("$file")
+          done
+          args+=(--target "$GITHUB_SHA" --title "$RELEASE_TITLE" --generate-notes)
+
+          if [[ "$RELEASE_DRAFT" == "true" ]]; then
+            args+=(--draft)
+          fi
+          if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"

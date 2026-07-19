@@ -7,6 +7,7 @@ import process from "node:process";
 const root = path.resolve(import.meta.dirname, "..");
 const sourceDir = path.join(root, "src");
 const manifestPath = path.join(sourceDir, "manifest.json");
+const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 
 function fail(message) {
   console.error(`ERROR: ${message}`);
@@ -44,12 +45,13 @@ try {
 if (manifest.manifest_version !== 3) {
   fail("manifest_version must be 3.");
 }
-if (manifest.version !== "0.4.0") {
-  fail(`manifest version (${manifest.version}) does not match package version (0.4.0).`);
+if (manifest.version !== packageJson.version) {
+  fail(`manifest version (${manifest.version}) does not match package version (${packageJson.version}).`);
 }
 
 const referencedFiles = new Set();
 if (manifest.background?.service_worker) referencedFiles.add(manifest.background.service_worker);
+for (const script of manifest.background?.scripts ?? []) referencedFiles.add(script);
 if (manifest.action?.default_popup) referencedFiles.add(manifest.action.default_popup);
 if (manifest.options_page) referencedFiles.add(manifest.options_page);
 for (const script of manifest.content_scripts ?? []) {
@@ -71,5 +73,5 @@ for (const file of files.filter((file) => file.endsWith(".js"))) {
 }
 
 if (!process.exitCode) {
-  console.log(`Validated ${files.length} source files for Chrome MV3.`);
+  console.log(`Validated ${files.length} source files for Chromium and Firefox MV3 builds.`);
 }
