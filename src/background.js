@@ -333,8 +333,8 @@ async function handleMessage(message, sender) {
       const useMasterPassword = message.useMasterPassword !== false;
       const unlockMode = useMasterPassword ? "password" : "device";
       const masterPassword = String(message.masterPassword || "");
-      if (useMasterPassword && masterPassword.length < 8) {
-        throw new Error("マスターパスワードは8文字以上にしてください。");
+      if (useMasterPassword && masterPassword.length < 6) {
+        throw new Error("マスターパスワードは6文字以上にしてください。");
       }
 
       const settings = normalizeSettings(message.settings);
@@ -391,7 +391,11 @@ async function handleMessage(message, sender) {
       }
 
       const masterPassword = String(message.masterPassword || "");
-      const key = await deriveVaultKey(
+      if (masterPassword.length < 6) {
+        throw new Error("マスターパスワードは6文字以上にしてください。");
+      }
+
+      let key = await deriveVaultKey(
         masterPassword,
         base64ToBytes(vault.salt),
         true
@@ -400,7 +404,20 @@ async function handleMessage(message, sender) {
       try {
         await decryptVault(vault, key);
       } catch {
-        throw new Error("マスターパスワードが違います。");
+        // v0.5.1の短時間だけ使用した互換形式も解除できるようにする。
+        if (masterPassword.length >= 8) {
+          throw new Error("マスターパスワードが違います。");
+        }
+        key = await deriveVaultKey(
+          `sit:${masterPassword}`,
+          base64ToBytes(vault.salt),
+          true
+        );
+        try {
+          await decryptVault(vault, key);
+        } catch {
+          throw new Error("マスターパスワードが違います。");
+        }
       }
 
       const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));

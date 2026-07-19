@@ -126,50 +126,8 @@
     masterPassword.addEventListener("focus", showRequirement);
     masterPassword.addEventListener("input", showRequirement);
     masterPassword.addEventListener("blur", hideRequirement);
-
-    const masterConfirm = document.getElementById("initialMasterPasswordConfirm");
-    masterConfirm?.setAttribute("minlength", "6");
-    document.getElementById("initializeButton")?.addEventListener("click", (event) => {
-      const enabled = document.getElementById("initialUseMasterPassword")?.checked;
-      if (!enabled) return;
-      if (masterPassword.value.length < 6) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        const message = document.getElementById("message");
-        if (message) {
-          message.textContent = "マスターパスワードは6文字以上にしてください。";
-          message.classList.add("error");
-        }
-        masterPassword.focus();
-        return;
-      }
-      if (masterPassword.value.length < 8 && masterConfirm) {
-        const original = masterPassword.value;
-        const originalConfirm = masterConfirm.value;
-        const transformed = `sit:${original}`;
-        masterPassword.value = transformed;
-        if (originalConfirm === original) masterConfirm.value = transformed;
-        queueMicrotask(() => {
-          if (masterPassword.value === transformed) masterPassword.value = original;
-          if (masterConfirm.value === transformed) masterConfirm.value = originalConfirm;
-        });
-      }
-    }, true);
+    document.getElementById("initialMasterPasswordConfirm")?.setAttribute("minlength", "6");
   }
-
-  const unlockPassword = document.getElementById("unlockMasterPassword")
-    || document.getElementById("unlockPassword");
-  document.getElementById("unlockButton")?.addEventListener("click", () => {
-    if (!unlockPassword || unlockPassword.value.length < 6 || unlockPassword.value.length >= 8) {
-      return;
-    }
-    const original = unlockPassword.value;
-    const transformed = `sit:${original}`;
-    unlockPassword.value = transformed;
-    queueMicrotask(() => {
-      if (unlockPassword.value === transformed) unlockPassword.value = original;
-    });
-  }, true);
 
   const dialog = document.getElementById("initialCodeDialog");
   const initializePanel = document.getElementById("initializePanel");
