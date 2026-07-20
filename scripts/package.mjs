@@ -14,10 +14,6 @@ const build = spawnSync(process.execPath, [path.join(root, "scripts/build.mjs")]
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 
-const manifest = JSON.parse(
-  await readFile(path.join(distDir, "chromium", "manifest.json"), "utf8")
-);
-
 const crcTable = new Uint32Array(256);
 for (let index = 0; index < 256; index += 1) {
   let value = index;
@@ -122,7 +118,7 @@ await mkdir(releaseDir, { recursive: true });
 for (const target of targets) {
   const outputPath = path.join(
     releaseDir,
-    `sit-adfs-totp-autofill-${target}-v${manifest.version}.zip`
+    `sit-adfs-totp-autofill-${target}.zip`
   );
   const files = await collect(path.join(distDir, target));
   await writeFile(outputPath, await createZip(files));
