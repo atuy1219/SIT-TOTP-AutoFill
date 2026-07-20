@@ -19,18 +19,13 @@ jobs:
           node-version: 22
       - run: npm run check
       - run: npm run build
-      - id: metadata
-        shell: bash
-        run: |
-          version="$(node -p "JSON.parse(require('fs').readFileSync('src/manifest.json', 'utf8')).version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: sit-adfs-totp-autofill-chromium-v${{ steps.metadata.outputs.version }}
+          name: sit-adfs-totp-autofill-chromium
           path: dist/chromium/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: sit-adfs-totp-autofill-firefox-v${{ steps.metadata.outputs.version }}
+          name: sit-adfs-totp-autofill-firefox
           path: dist/firefox/
           if-no-files-found: error
