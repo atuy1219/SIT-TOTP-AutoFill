@@ -105,7 +105,8 @@ button:disabled { opacity: .55; cursor: default; }
 .code {
   font-size: 38px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .12em;
+  letter-spacing: .08em;
+  word-spacing: .18em;
   font-weight: 700;
   text-align: center;
   margin: 12px 0 4px;
@@ -126,10 +127,18 @@ button:disabled { opacity: .55; cursor: default; }
   background: transparent;
   color: var(--muted);
   border: 1px solid var(--border);
+  transition:
+    color .15s ease,
+    background-color .15s ease,
+    border-color .15s ease,
+    transform .15s ease;
 }
 .icon-button:hover {
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 9%, Canvas);
+}
+.icon-button:active {
+  transform: scale(.94);
 }
 .icon-button.copied {
   color: white;
@@ -137,6 +146,7 @@ button:disabled { opacity: .55; cursor: default; }
   border-color: var(--primary);
 }
 .icon-button svg {
+  grid-area: 1 / 1;
   width: 22px;
   height: 22px;
   fill: none;
@@ -144,6 +154,21 @@ button:disabled { opacity: .55; cursor: default; }
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition:
+    opacity .15s ease,
+    transform .15s ease;
+}
+.icon-button .check-icon {
+  opacity: 0;
+  transform: scale(.65);
+}
+.icon-button.copied .copy-icon {
+  opacity: 0;
+  transform: scale(.65);
+}
+.icon-button.copied .check-icon {
+  opacity: 1;
+  transform: scale(1);
 }
 .progress {
   height: 6px;
