@@ -31,12 +31,15 @@
 
     <section id="codePanel" class="card" hidden>
       <div class="code-line">
-        <div id="code" class="code">------</div>
+        <div id="code" class="code">--- ---</div>
         <button id="copyButton" class="icon-button" type="button"
           title="コードをコピー" aria-label="コードをコピー">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
+          <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="8" y="8" width="11" height="11" rx="2"></rect>
             <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path>
+          </svg>
+          <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m5 12 4 4L19 6"></path>
           </svg>
         </button>
       </div>

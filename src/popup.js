@@ -21,6 +21,10 @@ function message(text, error = false) {
   element.classList.toggle("error", error);
 }
 
+function formatTotpCode(code) {
+  return String(code).replace(/^(\d{3})(\d{3})$/, "$1 $2");
+}
+
 function resetCopyButton() {
   clearTimeout(copyResetTimer);
   const button = byId("copyButton");
@@ -39,7 +43,7 @@ async function refreshCode() {
   }
 
   lastCode = result.code;
-  byId("code").textContent = result.code;
+  byId("code").textContent = formatTotpCode(result.code);
   byId("remaining").textContent = `${result.remaining}秒`;
   byId("progressBar").style.width =
     `${Math.max(0, Math.min(100, (result.remaining / result.period) * 100))}%`;
