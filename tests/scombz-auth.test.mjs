@@ -8,25 +8,17 @@ const source = await readFile(new URL("../src/scombz-auth.js", import.meta.url),
 function createContext(handler = async () => {
   throw new Error("Unexpected network call");
 }) {
-  const visits = [];
   const context = vm.createContext({
     URL,
     TextEncoder,
     AbortController,
     setTimeout,
     clearTimeout,
-    fetch: handler,
-    chrome: {
-      tabs: {
-        update: async (tabId, opts) => visits.push({ tabId, url: opts.url }),
-        create: async (opts) => visits.push({ url: opts.url })
-      }
-    }
+    fetch: handler
   });
   vm.runInContext(source, context);
   return {
-    evaluate: (code) => vm.runInContext(code, context),
-    visits
+    evaluate: (code) => vm.runInContext(code, context)
   };
 }
 
@@ -62,29 +54,16 @@ test("login sends the password only to the university mobile API", async () => {
   });
 });
 
-test("open uses the OTKEY redirect in the browser, not cross-origin fetch", async () => {
+test("OTKEY acquisition sends the bearer token only to the university mobile API", async () => {
   const calls = [];
   const ctx = createContext(async (url, options) => {
     calls.push({ url, options });
     return response({ status: "OK", otkey: "short-lived-key" });
   });
-  await ctx.evaluate('scombzOpenWithToken("test-bearer", {tabId: 7})');
+  assert.equal(await ctx.evaluate('scombzGetOtkey("test-bearer")'), "short-lived-key");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://smob.sic.shibaura-it.ac.jp/smob/api/otkey");
   assert.equal(calls[0].options.headers.Authorization, "Bearer test-bearer");
-  assert.deepEqual(ctx.visits, [{
-    tabId: 7,
-    url: "https://mobile.scombz.shibaura-it.ac.jp/short-lived-key/portal/home"
-  }]);
-});
-
-test("automatic renewal requires an existing ScombZ tab", async () => {
-  const ctx = createContext();
-  await assert.rejects(
-    ctx.evaluate('scombzOpenWithToken("test-bearer")'),
-    /認証先タブ/
-  );
-  assert.equal(ctx.visits.length, 0);
 });
 
 test("OTKEY bridge is always rooted at portal/home, not an arbitrary deep link", () => {

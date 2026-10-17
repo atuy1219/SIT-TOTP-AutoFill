@@ -1,6 +1,6 @@
 {
   "name": "scombz-login-helper",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "private": true,
   "description": "ScombZ automatic login and SESSION recovery, with optional legacy ADFS TOTP autofill.",
   "type": "module",
@@ -12,6 +12,6 @@
     "package": "node scripts/package.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

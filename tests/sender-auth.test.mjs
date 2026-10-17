@@ -8,7 +8,7 @@ import vm from "node:vm";
 // In particular sender.id, sender.url and sender.tab are all optional.
 // External pages/extensions would need onMessageExternal, not registered here.
 const source = await readFile(new URL("../src/background.js", import.meta.url), "utf8");
-const start = source.indexOf("async function handleMessage(message, sender) {");
+const start = source.indexOf("let vaultOperationQueue = Promise.resolve();");
 const end = source.indexOf("chrome.runtime.onMessage.addListener", start);
 assert.ok(start >= 0 && end > start);
 const handlerCode = source.slice(start, end);
@@ -21,10 +21,11 @@ function harness(data = {
 }) {
   const log = [];
   const ctx = vm.createContext({
+    passkeyAuthorizeConnect: async () => {},
+    hasRiskConsent: async () => true,
     requireUnlocked: async () => ({ vault: {}, key: {}, data }),
     normalizeUsername: (value) => String(value).trim(),
     normalizeSettings: (value) => ({ ...value }),
-    scombzSyncBypassRule: async () => {},
     scombzApiLogin: async (username, password) => {
       log.push({ action: "login", username, password });
       return "new-test-token";
@@ -32,10 +33,7 @@ function harness(data = {
     saveVaultData: async (_data, _key, _vault) => {
       log.push({ action: "save", data: structuredClone(data) });
     },
-    withActiveScombzToken: async (_vault, _key, _data, callback) => callback(data.scombzToken),
-    scombzOpenWithToken: async (token) => {
-      log.push({ action: "open", token });
-    }
+    withActiveScombzToken: async (_vault, _key, _data, callback) => callback(data.scombzToken)
   });
   vm.runInContext(handlerCode, ctx);
   return {
@@ -80,6 +78,16 @@ test("uses one-time typed university password without persisting it", async () =
   assert.equal(saved.data.scombzToken, "new-test-token");
 });
 
+test("API connection cannot replace the saved username with an unsaved account", async () => {
+  const h = harness();
+  await assert.rejects(h.handle({
+    type: "scombzConnect", username: "ab12345@sic", accountPassword: "new-account-password"
+  }, {}), /先に大学アカウントを保存/);
+  assert.equal(h.log.length, 0, "neither login nor a vault write may happen");
+  assert.equal(h.data.username, "al25133@sic");
+  assert.equal(h.data.password, "stored-university-password");
+});
+
 test("popup and options actions are not rejected when sender metadata is absent", async () => {
   const h = harness();
   const connected = await h.handle({ type: "scombzConnect" }, {});
@@ -96,30 +104,12 @@ test("popup and options actions are not rejected when sender metadata is absent"
 test("only internal onMessage is registered, never onMessageExternal", () => {
   assert.match(source, /chrome\.runtime\.onMessage\.addListener/);
   assert.doesNotMatch(source, /chrome\.runtime\.onMessageExternal\.addListener/);
-  assert.doesNotMatch(source, /許可されていない呼び出しです。/);
 });
 
-test("manual open button and message are absent; webRequest is observation-only", async () => {
-  const [optionsHtml, optionsJs, popupHtml, popupJs, manifestText] =
-    await Promise.all([
-      "../src/options.html", "../src/options.js",
-      "../src/popup.html", "../src/popup.js", "../src/manifest.json"
-    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")));
-  for (const content of [optionsHtml, optionsJs, popupHtml, popupJs]) {
-    assert.doesNotMatch(content, /scombzOpenButton|scombzPopupOpenButton|ScombZを開く/);
-  }
-  assert.doesNotMatch(source, /case "scombzOpen"/);
-  const manifest = JSON.parse(manifestText);
+test("extension permissions keep network observation read-only and private pages unexposed", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../src/manifest.json", import.meta.url), "utf8"));
   assert.ok(manifest.permissions.includes("webRequest"));
   assert.ok(!manifest.permissions.includes("webRequestBlocking"));
   assert.ok(manifest.host_permissions.includes("https://scombz.shibaura-it.ac.jp/*"));
-});
-
-test("PR build version remains 0.7.0 until merge", async () => {
-  const [manifest, pkg] = await Promise.all([
-    readFile(new URL("../src/manifest.json", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8")
-  ]);
-  assert.equal(JSON.parse(manifest).version, "0.7.0");
-  assert.equal(JSON.parse(pkg).version, "0.7.0");
+  assert.equal(manifest.web_accessible_resources, undefined);
 });

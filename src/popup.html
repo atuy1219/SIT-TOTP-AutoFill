@@ -21,14 +21,6 @@
       <button id="openOptionsFromSetup">設定を開く</button>
     </section>
 
-    <section id="unlockPanel" class="card" hidden>
-      <label>
-        旧マスターパスワード（今回のみ）
-        <input id="unlockPassword" type="password" autocomplete="current-password">
-      </label>
-      <button id="unlockButton">旧データを移行</button>
-    </section>
-
     <section id="codePanel" class="card" hidden>
       <div class="code-line">
         <div id="code" class="code">--- ---</div>
@@ -48,14 +40,10 @@
         <span id="remaining" class="muted">--秒</span>
       </div>
       <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
-      <div class="row wrap">
-      </div>
     </section>
 
     <section id="scombzPanel" class="card" hidden>
-      <h2>ScombZ</h2>
       <p id="scombzPopupStatus" class="muted"></p>
-      <button id="scombzPopupSettingsButton" class="secondary">API接続設定</button>
     </section>
 
     <button id="optionsButton" class="secondary">設定</button>

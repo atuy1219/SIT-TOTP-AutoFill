@@ -51,12 +51,6 @@
       stroke-linecap: round;
       stroke-linejoin: round;
     }
-    .input-requirement {
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
     .code-dialog {
       width: min(420px, calc(100vw - 32px));
       border: 1px solid var(--border);
@@ -83,8 +77,6 @@
       letter-spacing: .12em;
       font-variant-numeric: tabular-nums;
     }
-    #initialPreviewButton,
-    #initialPreview { display: none !important; }
   `;
   document.head.append(style);
 

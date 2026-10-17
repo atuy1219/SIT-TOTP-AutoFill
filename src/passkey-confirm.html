@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>パスキー確認 - ScombZ Login Helper</title>
+  <link rel="stylesheet" href="ui.css">
+</head>
+<body class="options">
+  <main>
+    <section class="card">
+      <h2>ScombZログインの確認</h2>
+      <p>端末内で本人確認すると、元のタブでログインを続けます。</p>
+      <div class="row wrap">
+        <button id="confirmButton" type="button" disabled>パスキーで確認</button>
+        <button id="cancelButton" type="button" class="secondary">キャンセル</button>
+      </div>
+      <p id="message" class="message" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="passkey-client.js"></script>
+  <script src="passkey-confirm.js"></script>
+</body>
+</html>

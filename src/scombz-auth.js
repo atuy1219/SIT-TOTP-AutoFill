@@ -94,6 +94,7 @@ async function scombzGetOtkey(token) {
   return response.otkey;
 }
 
+
 function scombzBridgeUrl(otkey) {
   if (!scombzValidToken(otkey) || otkey.length > 2048) {
     throw new Error("OTKEYが不正です。");
@@ -102,17 +103,6 @@ function scombzBridgeUrl(otkey) {
   // through /portal/home. Deep links are restored AFTER the cookie arrives.
   return SCOMBZ_MOBILE_ORIGIN + "/" + encodeURIComponent(otkey) +
     "/portal/home";
-}
-
-async function scombzOpenWithToken(token, { tabId } = {}) {
-  // Renewal is always tied to the user's existing ScombZ tab.
-  // Never create a new tab as a side effect of checking session expiry.
-  if (!Number.isInteger(tabId) || tabId < 0) {
-    throw new Error("ScombZの認証先タブが見つかりません。");
-  }
-  const otkey = await scombzGetOtkey(token);
-  const url = scombzBridgeUrl(otkey);
-  await chrome.tabs.update(tabId, { url });
 }
 
 // Never put OTKEY, Bearer Token or the redirect URL in an error message or log.

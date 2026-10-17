@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ScombZ Login Helper",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "description": "ScombApp APIによるScombZ自動ログインとSESSION更新。従来のADFS TOTP補助機能も利用できます。",
   "minimum_chrome_version": "102",
   "permissions": [
@@ -48,17 +48,5 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "auth-redirect.html",
-        "auth-redirect.js",
-        "ui.css"
-      ],
-      "matches": [
-        "https://scombz.shibaura-it.ac.jp/*"
-      ]
-    }
-  ]
+  }
 }
