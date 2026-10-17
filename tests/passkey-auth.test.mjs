@@ -74,20 +74,24 @@ function clientData(options, type = "webauthn.get", overrides = {}) {
   }));
 }
 
-async function enroll(h) {
-  const keys = await webcrypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+async function enroll(h, algorithm = -7) {
+  const parameters = algorithm === -7 ? { name: "ECDSA", namedCurve: "P-256" } : {
+    name: "RSASSA-PKCS1-v1_5", modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256"
+  };
+  const keys = await webcrypto.subtle.generateKey(parameters, true, ["sign", "verify"]);
   const publicKey = encode(await webcrypto.subtle.exportKey("spki", keys.publicKey));
   const options = await h.call({ type: "passkeyBeginRegistration" });
   assert.equal(Object.hasOwn(options, "rpId"), false);
   const credentialId = encode(new Uint8Array([1, 2, 3]));
-  const registration = { keys, publicKey, credentialId };
+  const registration = { keys, publicKey, credentialId, algorithm };
   const proof = await assertion({ challenge: options.prfChallenge }, registration);
-  const response = { credentialId, publicKey, algorithm: -7,
+  const response = { credentialId, publicKey, algorithm,
     clientDataJSON: encode(clientData(options, "webauthn.create")),
     authenticatorData: encode(await authenticator()), transports: ["internal", "hybrid"],
     prfOutput: encode(new Uint8Array(32).fill(7)), proof };
   await h.call({ type: "passkeyFinish", id: options.id, response });
-  return { keys, publicKey, credentialId: response.credentialId };
+  return registration;
 }
 
 function derSignature(raw) {
@@ -106,9 +110,11 @@ async function assertion(options, registration, { flags = 5, domain = rpId, clie
   const digest = new Uint8Array(await hash(data));
   const signed = new Uint8Array(auth.length + digest.length);
   signed.set(auth); signed.set(digest, auth.length);
-  const raw = new Uint8Array(await webcrypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, registration.keys.privateKey, signed));
+  const rsa = registration.algorithm === -257;
+  const raw = new Uint8Array(await webcrypto.subtle.sign(rsa
+    ? { name: "RSASSA-PKCS1-v1_5" } : { name: "ECDSA", hash: "SHA-256" }, registration.keys.privateKey, signed));
   return { credentialId, clientDataJSON: encode(data), authenticatorData: encode(auth),
-    signature: encode(derSignature(raw)), prfOutput: encode(new Uint8Array(32).fill(7)) };
+    signature: encode(rsa ? raw : derSignature(raw)), prfOutput: encode(new Uint8Array(32).fill(7)) };
 }
 
 async function loginRequest(h, tabId = 4) {
@@ -322,4 +328,41 @@ test("default RP hashes are constrained to the extension's own identities", asyn
       clientDataJSON: client, authenticatorData: encode(await authenticator(5, domain))
     }, "webauthn.create"));
   }
+});
+
+test("RS256 registration persists its algorithm and verifies only valid signatures after restart", async () => {
+  const original = harness();
+  const registration = await enroll(original, -257);
+  assert.equal((await original.invoke("passkeyConfig")).algorithm, -257);
+  const h = harness(original);
+  const valid = await loginRequest(h);
+  await h.call({ type: "passkeyFinish", id: valid.id,
+    response: await assertion(valid.options, registration) }, valid.sender);
+  assert.equal(h.resumed.length, 1);
+  const invalid = await loginRequest(h);
+  const response = await assertion(invalid.options, registration);
+  const bytes = Buffer.from(response.signature, "base64url");
+  bytes[0] ^= 1;
+  response.signature = encode(bytes);
+  await assert.rejects(h.call({ type: "passkeyFinish", id: invalid.id, response }, invalid.sender));
+  assert.equal(h.resumed.length, 1);
+});
+
+test("existing ES256 credentials without algorithm metadata still verify", async () => {
+  const h = harness(), registration = await enroll(h);
+  delete h.local.values.sitScombzLocalPasskey.algorithm;
+  const request = await loginRequest(h);
+  await h.call({ type: "passkeyFinish", id: request.id,
+    response: await assertion(request.options, registration) }, request.sender);
+  assert.equal(h.resumed.length, 1);
+});
+
+test("unsupported algorithms cannot register a credential", async () => {
+  const h = harness(), options = await h.call({ type: "passkeyBeginRegistration" });
+  await assert.rejects(h.call({ type: "passkeyFinish", id: options.id, response: {
+    credentialId: "AQID", algorithm: -8,
+    clientDataJSON: encode(clientData(options, "webauthn.create")),
+    authenticatorData: encode(await authenticator())
+  } }), /このパスキーには対応していません/);
+  assert.equal(await h.invoke("passkeyConfig"), null);
 });

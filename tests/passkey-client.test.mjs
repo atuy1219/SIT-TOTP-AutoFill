@@ -52,6 +52,7 @@ test("registration omits rp.id without network access or extra permissions", asy
   const h = harness();
   await h.run("register");
   assert.equal(Object.hasOwn(h.requested[0].publicKey.rp, "id"), false);
+  assert.deepEqual(Array.from(h.requested[0].publicKey.pubKeyCredParams, entry => entry.alg), [-7, -257]);
   assert.equal(h.requested[0].publicKey.authenticatorSelection.userVerification, "required");
   assert.equal(h.requested[0].publicKey.attestation, "none");
   assert.deepEqual(Array.from(h.requested[0].publicKey.challenge), [1, 2, 3]);

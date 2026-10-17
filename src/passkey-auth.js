@@ -127,16 +127,25 @@ function passkeyRawSignature(encoded) {
   return raw;
 }
 
+function passkeyAlgorithm(algorithm) {
+  if (algorithm === -7) return { name: "ECDSA", namedCurve: "P-256", hash: "SHA-256" };
+  if (algorithm === -257) return { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
+  throw new Error("このパスキーには対応していません。");
+}
+
 async function passkeyVerifyAssertion(request, response, config) {
   if (!config || response.credentialId !== config.credentialId) throw new Error("登録されたパスキーを使用してください。");
   const { clientBytes, authenticator } = await passkeyValidateData(request, response, "webauthn.get");
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", clientBytes));
   const signed = new Uint8Array(authenticator.length + hash.length);
   signed.set(authenticator); signed.set(hash, authenticator.length);
+  // Credentials saved before algorithm negotiation were always ES256.
+  const algorithm = config.algorithm ?? -7;
+  const parameters = passkeyAlgorithm(algorithm);
   const publicKey = await crypto.subtle.importKey("spki", passkeyDecode(config.publicKey),
-    { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-  if (!await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey,
-    passkeyRawSignature(response.signature), signed)) throw new Error("パスキーの署名を確認できません。");
+    parameters, false, ["verify"]);
+  const signature = algorithm === -7 ? passkeyRawSignature(response.signature) : passkeyDecode(response.signature);
+  if (!await crypto.subtle.verify(parameters, publicKey, signature, signed)) throw new Error("パスキーの署名を確認できません。");
 }
 
 async function passkeyRequestLogin(tabId, resumeUrl, failed401, targetUrl) {
@@ -223,17 +232,16 @@ async function passkeyHandleMessage(message, sender) {
       await requireUnlocked();
       await passkeyValidateData(request, message.response, "webauthn.create");
       passkeyDecode(message.response.credentialId);
-      if (message.response.algorithm !== -7) throw new Error("このパスキーには対応していません。");
-      await crypto.subtle.importKey("spki", passkeyDecode(message.response.publicKey),
-        { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      const algorithm = message.response.algorithm;
+      passkeyAlgorithm(algorithm);
       await passkeyVerifyAssertion({ challenge: request.prfChallenge }, message.response.proof, {
-        credentialId: message.response.credentialId, publicKey: message.response.publicKey
+        credentialId: message.response.credentialId, publicKey: message.response.publicKey, algorithm
       });
       const transports = Array.isArray(message.response.transports)
         ? message.response.transports.filter(value =>
           ["internal", "usb", "nfc", "ble", "hybrid"].includes(value)) : [];
       await passkeyEnablePrfVault(message.response.prfOutput, {
-        credentialId: message.response.credentialId, publicKey: message.response.publicKey,
+        credentialId: message.response.credentialId, publicKey: message.response.publicKey, algorithm,
         prfSalt: request.prfSalt, transports
       });
     } else {

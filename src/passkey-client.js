@@ -52,7 +52,7 @@ const PasskeyClient = (() => {
       const credential = await navigator.credentials.create({ publicKey: {
         rp: { name: "ScombZ Login Helper（PRF暗号化）" },
         user: { id: decode(options.userId), name: options.username, displayName: options.username },
-        challenge: decode(options.challenge), pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        challenge: decode(options.challenge), pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
         extensions: { prf: { eval: { first: decode(options.prfSalt) } } },
         attestation: "none", timeout: 60000
