@@ -7,8 +7,8 @@
       <circle cx="12" cy="12" r="2.75"></circle>
     </svg>`;
   let codeTimer = null;
-  let sawInitializePanel = false;
   let confirmationShown = false;
+  let confirmationInProgress = false;
 
   const style = document.createElement("style");
   style.textContent = `
@@ -51,12 +51,6 @@
       stroke-linecap: round;
       stroke-linejoin: round;
     }
-    .input-requirement {
-      display: block;
-      margin-top: 6px;
-      color: var(--muted);
-      font-size: 12px;
-    }
     .code-dialog {
       width: min(420px, calc(100vw - 32px));
       border: 1px solid var(--border);
@@ -83,8 +77,6 @@
       letter-spacing: .12em;
       font-variant-numeric: tabular-nums;
     }
-    #initialPreviewButton,
-    #initialPreview { display: none !important; }
   `;
   document.head.append(style);
 
@@ -115,23 +107,7 @@
     wrapper.append(button);
   }
 
-  const masterPassword = document.getElementById("initialMasterPassword");
-  const masterRequirement = document.getElementById("initialMasterPasswordRequirement");
-  if (masterPassword && masterRequirement) {
-    masterPassword.minLength = 6;
-    const showRequirement = () => { masterRequirement.hidden = false; };
-    const hideRequirement = () => {
-      if (!masterPassword.value) masterRequirement.hidden = true;
-    };
-    masterPassword.addEventListener("focus", showRequirement);
-    masterPassword.addEventListener("input", showRequirement);
-    masterPassword.addEventListener("blur", hideRequirement);
-    document.getElementById("initialMasterPasswordConfirm")?.setAttribute("minlength", "6");
-  }
-
   const dialog = document.getElementById("initialCodeDialog");
-  const initializePanel = document.getElementById("initializePanel");
-  const settingsArea = document.getElementById("settingsArea");
 
   function stopCodeRefresh() {
     clearInterval(codeTimer);
@@ -140,40 +116,46 @@
 
   async function refreshCode() {
     const result = await chrome.runtime.sendMessage({ type: "currentCode" });
+    // ScombZ-only setup can validly omit the TOTP seed.
+    if (result?.reason === "not-configured") return false;
     if (!result?.ok) throw new Error(result?.error || "コードを取得できません。");
     document.getElementById("initialCodeDialogCode").textContent = result.code;
     document.getElementById("initialCodeDialogRemaining").textContent =
-      `残り${result.remaining}秒`;
+      "残り" + result.remaining + "秒";
+    return true;
   }
 
   async function showCodeConfirmation() {
-    if (!dialog || confirmationShown) return;
-    confirmationShown = true;
-    await refreshCode();
-    if (typeof dialog.showModal === "function") dialog.showModal();
-    else dialog.setAttribute("open", "");
-    codeTimer = setInterval(() => {
-      refreshCode().catch(stopCodeRefresh);
-    }, 1000);
-  }
-
-  function evaluatePanels() {
-    if (initializePanel && !initializePanel.hidden) sawInitializePanel = true;
-    if (
-      sawInitializePanel &&
-      settingsArea &&
-      !settingsArea.hidden &&
-      !confirmationShown
-    ) {
-      showCodeConfirmation().catch((error) => {
-        const message = document.getElementById("message");
-        if (message) {
-          message.textContent = error.message;
-          message.classList.add("error");
-        }
-      });
+    if (!dialog || confirmationShown || confirmationInProgress) return;
+    confirmationInProgress = true;
+    try {
+      const config = await chrome.runtime.sendMessage({ type: "getConfig" });
+      if (config?.ok && !config.secretConfigured) return;
+      if (!config?.ok) throw new Error(config?.error || "設定を確認できません。");
+      if (!await refreshCode()) return;
+      confirmationShown = true;
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+      codeTimer = setInterval(() => {
+        refreshCode().then((ok) => { if (!ok) stopCodeRefresh(); })
+          .catch(stopCodeRefresh);
+      }, 1000);
+    } finally {
+      confirmationInProgress = false;
     }
   }
+
+  // Only initial setup with a saved seed may open this confirmation.
+  // Panel visibility changes do not indicate that TOTP was configured.
+  document.addEventListener("sit:initialized-with-seed", () => {
+    showCodeConfirmation().catch((error) => {
+      const message = document.getElementById("message");
+      if (message) {
+        message.textContent = error.message;
+        message.classList.add("error");
+      }
+    });
+  });
 
   document.getElementById("initialCodeDialogClose")?.addEventListener("click", () => {
     stopCodeRefresh();
@@ -183,12 +165,4 @@
   dialog?.addEventListener("close", stopCodeRefresh);
   dialog?.addEventListener("cancel", stopCodeRefresh);
 
-  if (initializePanel && settingsArea) {
-    new MutationObserver(evaluatePanels).observe(document.documentElement, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["hidden"]
-    });
-    evaluatePanels();
-  }
 })();

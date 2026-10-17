@@ -1,28 +1,64 @@
 "use strict";
 
 const byId = (id) => document.getElementById(id);
-const LOCAL_VAULT_KEY = "sitAdfsEncryptedVault";
-const LOCAL_DEVICE_KEY = "sitAdfsDeviceKey";
-const SESSION_KEY = "sitAdfsSessionKey";
 const BACKUP_FORMAT = "sit-totp-autofill-backup";
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
+const ENCRYPTED_BACKUP_VERSION = 3;
 const ITERATIONS = 310000;
-let initialPreviewTimer = null;
+let notificationTimer = null;
+let pendingAccountUsername = null;
+// Serialize writes from the options page: rapid checkbox changes and explicit
+// credential/seed saves must not overwrite one another with stale vault data.
+let settingsWriteQueue = Promise.resolve();
+
+function queueSettingsWrite(operation) {
+  const task = settingsWriteQueue.then(operation, operation);
+  settingsWriteQueue = task.catch(() => {});
+  return task;
+}
 
 async function send(type, extra = {}) {
   return chrome.runtime.sendMessage({ type, ...extra });
 }
 
+async function refreshIfLocked() {
+  try {
+    const status = await send("status");
+    if (status?.initialized && !status.unlocked) {
+      if (!byId("settingsArea").hidden) pendingAccountUsername = byId("username").value;
+      await refresh();
+    }
+  } catch {
+    // Preserve the original action error if the background is unavailable.
+  }
+}
+
+function normalizeUsername(value) {
+  const username = String(value || "").trim();
+  return /^[A-Za-z]{2}\d{5}$/.test(username) ? `${username.toLowerCase()}@sic` : username;
+}
+
 function message(text, error = false) {
   const element = byId("message");
+  clearTimeout(notificationTimer);
   element.textContent = text;
   element.classList.toggle("error", error);
+  if (!text) return;
+  // Important errors stay longer, but neither success nor error permanently
+  // covers the top of the screen.
+  notificationTimer = setTimeout(() => {
+    element.textContent = "";
+    element.classList.remove("error");
+  }, error ? 10000 : 5500);
 }
 
 function showState(state) {
+  byId("consentPanel").hidden = state !== "consent";
+  byId("importPanel").hidden = state === "consent";
   byId("initializePanel").hidden = state !== "initialize";
   byId("unlockPanel").hidden = state !== "unlock";
   byId("settingsArea").hidden = state !== "settings";
+  byId("deleteDataPanel").hidden = state !== "settings";
 }
 
 function normalizeBase32(value) {
@@ -62,51 +98,52 @@ function decodeBase32(value) {
   return new Uint8Array(output);
 }
 
-function counterToBytes(counter) {
-  let value = BigInt(counter);
-  const bytes = new Uint8Array(8);
-  for (let index = 7; index >= 0; index -= 1) {
-    bytes[index] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return bytes;
-}
-
-async function generateTotp(secret, now = Date.now()) {
-  const period = 30;
-  const counter = Math.floor(now / 1000 / period);
-  const key = await crypto.subtle.importKey(
-    "raw",
-    decodeBase32(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const digest = new Uint8Array(
-    await crypto.subtle.sign("HMAC", key, counterToBytes(counter))
-  );
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary =
-    ((digest[offset] & 0x7f) << 24) |
-    ((digest[offset + 1] & 0xff) << 16) |
-    ((digest[offset + 2] & 0xff) << 8) |
-    (digest[offset + 3] & 0xff);
-
-  return {
-    code: String(binary % 1_000_000).padStart(6, "0"),
-    remaining: period - (Math.floor(now / 1000) % period)
-  };
-}
-
-function bytesToBase64(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
-}
-
 function base64ToBytes(value) {
   const binary = atob(value);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+}
+
+async function encryptBackupData(data, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveBackupKey(password, salt, false);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key,
+    new TextEncoder().encode(JSON.stringify(data)));
+  return {
+    format: BACKUP_FORMAT, version: ENCRYPTED_BACKUP_VERSION,
+    exportedAt: new Date().toISOString(),
+    vault: { kdf: "PBKDF2-SHA256", iterations: ITERATIONS,
+      salt: bytesToBase64(salt), iv: bytesToBase64(iv),
+      ciphertext: bytesToBase64(new Uint8Array(ciphertext)) }
+  };
+}
+
+async function decryptEncryptedBackup(envelope, password) {
+  const vault = envelope?.vault;
+  if (envelope?.version !== ENCRYPTED_BACKUP_VERSION || !vault ||
+      vault.kdf !== "PBKDF2-SHA256" || vault.iterations !== ITERATIONS ||
+      typeof vault.salt !== "string" || typeof vault.iv !== "string" ||
+      typeof vault.ciphertext !== "string") {
+    throw new Error("暗号化バックアップの形式が不正です。");
+  }
+  if (!password) throw new Error("バックアップパスワードを入力してください。");
+  try {
+    const salt = base64ToBytes(vault.salt);
+    const iv = base64ToBytes(vault.iv);
+    if (salt.length !== 16 || iv.length !== 12) throw new Error("Invalid parameters");
+    const key = await deriveBackupKey(password, salt, false);
+    const decrypted = await decryptVaultPayload(vault, key);
+    if (!decrypted || typeof decrypted.username !== "string" ||
+        typeof decrypted.settings !== "object" ||
+        (decrypted.secret && typeof decrypted.secret !== "string")) throw new Error("Invalid payload");
+    return decrypted;
+  } catch {
+    throw new Error("バックアップパスワードが違うか、ファイルが破損しています。");
+  }
 }
 
 async function deriveBackupKey(password, salt, extractable = true) {
@@ -131,16 +168,6 @@ async function deriveBackupKey(password, salt, extractable = true) {
   );
 }
 
-async function importVaultKey(encoded, extractable = false) {
-  return crypto.subtle.importKey(
-    "raw",
-    base64ToBytes(encoded),
-    { name: "AES-GCM" },
-    extractable,
-    ["encrypt", "decrypt"]
-  );
-}
-
 async function decryptVaultPayload(vault, key) {
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: base64ToBytes(vault.iv) },
@@ -150,30 +177,8 @@ async function decryptVaultPayload(vault, key) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
-async function encryptBackupVault(data, password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveBackupKey(password, salt, false);
-  const plaintext = new TextEncoder().encode(JSON.stringify(data));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    plaintext
-  );
-
-  return {
-    version: 2,
-    unlockMode: "password",
-    kdf: "PBKDF2-SHA256",
-    iterations: ITERATIONS,
-    salt: bytesToBase64(salt),
-    iv: bytesToBase64(iv),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext))
-  };
-}
-
 function validateBackupEnvelope(value) {
-  if (!value || value.format !== BACKUP_FORMAT || value.version !== BACKUP_VERSION) {
+  if (!value || value.format !== BACKUP_FORMAT || value.version !== 1) {
     throw new Error("この拡張機能のバックアップファイルではありません。");
   }
   const vault = value.vault;
@@ -195,7 +200,13 @@ function validateBackupData(data) {
   if (!data || typeof data !== "object") {
     throw new Error("バックアップ内の設定データが不正です。");
   }
-  validateSecret(data.secret);
+  if (data.secret) validateSecret(data.secret);
+  else if (data.settings?.autoFill !== false) {
+    throw new Error("バックアップ内のTOTP設定が不正です。");
+  }
+  if (data.scombzToken != null && typeof data.scombzToken !== "string") {
+    throw new Error("バックアップ内のScombZ接続情報が不正です。");
+  }
   if (typeof data.username !== "string" || typeof data.password !== "string") {
     throw new Error("バックアップ内のアカウント情報が不正です。");
   }
@@ -216,30 +227,12 @@ function downloadJson(value, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function updateInitialMasterPasswordMode() {
-  const useMasterPassword = byId("initialUseMasterPassword").checked;
-  byId("initialMasterPasswordFields").hidden = !useMasterPassword;
-  byId("deviceUnlockWarning").hidden = useMasterPassword;
-  byId("initialMasterPassword").disabled = !useMasterPassword;
-  byId("initialMasterPasswordConfirm").disabled = !useMasterPassword;
-
-  if (!useMasterPassword) {
-    byId("initialMasterPassword").value = "";
-    byId("initialMasterPasswordConfirm").value = "";
-  }
-}
-
 function updateInitialAutoLoginMode() {
+  // University credentials are mandatory even when legacy ADFS automation
+  // is disabled. Only ADFS-specific dependent options should be disabled.
   const autoLogin = byId("initialAutoLogin").checked;
-  byId("initialUsername").disabled = !autoLogin;
-  byId("initialAccountPassword").disabled = !autoLogin;
   byId("initialKeepSignedIn").disabled = !autoLogin;
-
-  if (!autoLogin) {
-    byId("initialUsername").value = "";
-    byId("initialAccountPassword").value = "";
-    byId("initialKeepSignedIn").checked = false;
-  }
+  if (!autoLogin) byId("initialKeepSignedIn").checked = false;
 }
 
 function readInitialSettings() {
@@ -248,7 +241,8 @@ function readInitialSettings() {
     keepSignedIn: byId("initialKeepSignedIn").checked,
     autoSelectProvider: byId("initialAutoSelectProvider").checked,
     autoFill: byId("initialAutoFill").checked,
-    autoSubmit: byId("initialAutoSubmit").checked
+    autoSubmit: byId("initialAutoSubmit").checked,
+    scombzAutoLogin: byId("initialScombzAutoLogin").checked
   };
 }
 
@@ -258,54 +252,41 @@ function readSettings() {
     keepSignedIn: byId("keepSignedIn").checked,
     autoSelectProvider: byId("autoSelectProvider").checked,
     autoFill: byId("autoFill").checked,
-    autoSubmit: byId("autoSubmit").checked
+    autoSubmit: byId("autoSubmit").checked,
+    scombzAutoLogin: byId("scombzAutoLogin").checked
   };
-}
-
-function stopInitialPreview() {
-  clearInterval(initialPreviewTimer);
-  initialPreviewTimer = null;
-  byId("initialPreview").hidden = true;
-}
-
-async function refreshInitialPreview() {
-  const secret = validateSecret(byId("initialSecret").value);
-  const result = await generateTotp(secret);
-  byId("initialPreviewCode").textContent = result.code;
-  byId("initialPreviewRemaining").textContent = `残り${result.remaining}秒`;
-  byId("initialPreview").hidden = false;
-}
-
-async function startInitialPreview() {
-  stopInitialPreview();
-  await refreshInitialPreview();
-  initialPreviewTimer = setInterval(() => {
-    refreshInitialPreview().catch(() => stopInitialPreview());
-  }, 1000);
 }
 
 async function refresh() {
   const status = await send("status");
+  if (status.consentRequired) {
+    showState("consent");
+    return;
+  }
 
   if (!status.initialized) {
     showState("initialize");
-    updateInitialMasterPasswordMode();
     updateInitialAutoLoginMode();
     return;
   }
 
-  stopInitialPreview();
-
-  if (!status.unlocked) {
-    const deviceMode = status.unlockMode === "device";
+  if (!status.unlocked || status.migrationRequired) {
+    const legacyMode = status.unlockMode === "legacy" || status.migrationRequired;
+    const prfMode = status.unlockMode === "prf";
+    byId("unlockHeading").textContent = prfMode ? "パスキー保管庫の解除"
+      : legacyMode ? "マスターパスワードからパスキーへ移行" : "保管庫を読み込めません";
     showState("unlock");
-    byId("unlockDescription").textContent = deviceMode
-      ? "端末内の自動解除キーを読み込めません。バックアップをインポートするか、データを削除して再設定してください。"
-      : "マスターパスワードを入力してください。";
-    byId("unlockMasterPasswordLabel").hidden = deviceMode;
-    byId("unlockButton").hidden = deviceMode;
-    byId("resetLockedButton").hidden = !deviceMode;
-    if (!deviceMode) byId("unlockMasterPassword").focus();
+    byId("unlockDescription").textContent = legacyMode
+      ? "マスターパスワードによる保護は廃止しました。データを解除してパスキーを登録します。移行が完了するまで元のデータと保護方式を保持します。"
+      : prfMode ? "暗号化保管庫を使うにはパスキーで本人確認してください。紛失した場合は復号できません。"
+      : "端末の暗号化キーを読み込めません。バックアップから復元するか、再設定してください。";
+    byId("unlockMasterPasswordLabel").hidden = !legacyMode || status.unlocked;
+    byId("unlockButton").hidden = !legacyMode;
+    byId("unlockButton").textContent = status.unlocked
+      ? "パスキーを登録して移行" : "解除してパスキーを登録";
+    byId("unlockPasskeyButton").hidden = !prfMode;
+    byId("resetLockedButton").hidden = false;
+    if (legacyMode && !status.unlocked) byId("unlockMasterPassword").focus();
     return;
   }
 
@@ -316,212 +297,437 @@ async function refresh() {
   }
 
   showState("settings");
-  byId("username").value = config.username || "";
+  byId("username").value = pendingAccountUsername ?? config.username ?? "";
+  pendingAccountUsername = null;
   byId("passwordStatus").textContent = config.passwordConfigured
     ? "大学パスワードは暗号化して保存されています。"
-    : "大学パスワードは保存されていません。";
-  byId("autoLogin").checked = config.settings.autoLogin !== false;
-  byId("keepSignedIn").checked = config.settings.keepSignedIn !== false;
+    : "大学パスワードが未設定です。入力して保存してください。";
+  byId("passwordStatus").classList.toggle("warning", !config.passwordConfigured);
+  byId("seedStatus").textContent = config.secretConfigured
+    ? "TOTPシードは保存されています。"
+    : "TOTPシードは未設定です。";
+  byId("autoLogin").checked = config.settings.autoLogin === true;
+  byId("keepSignedIn").checked = config.settings.keepSignedIn === true;
   byId("autoSelectProvider").checked =
-    config.settings.autoSelectProvider !== false;
-  byId("autoFill").checked = config.settings.autoFill !== false;
-  byId("autoSubmit").checked = config.settings.autoSubmit !== false;
+    config.settings.autoSelectProvider === true;
+  byId("autoFill").checked = config.settings.autoFill === true;
+  byId("autoSubmit").checked = config.settings.autoSubmit === true;
+  byId("scombzAutoLogin").checked = config.settings.scombzAutoLogin === true;
+  const apiConnected = config.scombzConnected === true;
+  byId("apiConnectionStatus").textContent = apiConnected
+    ? "APIトークン保存済み"
+    : "API未接続";
+  byId("scombzConnectButton").hidden = apiConnected;
+  byId("scombzDisconnectButton").hidden = !apiConnected;
+  byId("scombzDisconnectButton").disabled = !apiConnected;
+  byId("scombzPasskey").checked = config.passkeyEnabled === true;
+  byId("credentialProtectionStatus").textContent = config.passkeyProtected
+    ? "パスキーで保護されています。"
+    : config.passkeyEnabled
+      ? "パスキー確認のみ有効です。認証情報もパスキーで保護するには、下の移行ボタンを押してください。"
+      : "端末の自動解除キーで保護されています。パスキーを有効にすると、解除に本人確認が必要になります。";
+  byId("migratePasskeyButton").hidden = !config.passkeyEnabled || config.passkeyProtected;
 
-  const deviceMode = config.unlockMode === "device";
-  byId("unlockModeStatus").textContent = deviceMode
-    ? "マスターパスワードなし：端末内の自動解除キーを使用します。"
-    : "マスターパスワードで暗号化されています。";
-  byId("unlockModeStatus").classList.toggle("warning", deviceMode);
-  byId("lockButton").hidden = deviceMode;
+
 }
 
-byId("initialUseMasterPassword").addEventListener(
-  "change",
-  updateInitialMasterPasswordMode
-);
-byId("initialAutoLogin").addEventListener("change", updateInitialAutoLoginMode);
-byId("initialSecret").addEventListener("input", stopInitialPreview);
-byId("initialPreviewButton").addEventListener("click", () => {
-  startInitialPreview().catch((error) => message(error.message, true));
+byId("riskConsentCheckbox").addEventListener("change", () => {
+  byId("riskConsentButton").disabled = !byId("riskConsentCheckbox").checked;
+});
+byId("riskConsentButton").addEventListener("click", async () => {
+  if (!byId("riskConsentCheckbox").checked) return;
+  const button = byId("riskConsentButton");
+  button.disabled = true;
+  try {
+    const result = await send("acceptRiskConsent", { accepted: true });
+    if (!result?.ok) throw new Error(result?.error || "同意を保存できませんでした。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "同意を保存できませんでした。", true);
+    button.disabled = false;
+  }
 });
 
+byId("initialAutoLogin").addEventListener("change", updateInitialAutoLoginMode);
+byId("initialScombzAutoLogin").addEventListener("change", updateInitialAutoLoginMode);
+
 byId("initializeButton").addEventListener("click", async () => {
-  const useMasterPassword = byId("initialUseMasterPassword").checked;
-  const masterPassword = byId("initialMasterPassword").value;
-
-  if (
-    useMasterPassword &&
-    masterPassword !== byId("initialMasterPasswordConfirm").value
-  ) {
-    message("マスターパスワードの確認が一致しません。", true);
+  const username = byId("initialUsername").value.trim();
+  const password = byId("initialAccountPassword").value;
+  if (!username) {
+    byId("initialUsername").focus();
+    message("大学ユーザー名を入力してください。", true);
     return;
   }
-
-  const autoLogin = byId("initialAutoLogin").checked;
-  const result = await send("initialize", {
-    useMasterPassword,
-    masterPassword,
-    username: autoLogin ? byId("initialUsername").value : "",
-    accountPassword: autoLogin ? byId("initialAccountPassword").value : "",
-    secret: byId("initialSecret").value,
-    settings: readInitialSettings()
-  });
-
-  if (!result?.ok) {
-    message(result?.error || "保存できませんでした。", true);
+  if (!password) {
+    byId("initialAccountPassword").focus();
+    message("大学アカウントのパスワードを入力してください。", true);
     return;
   }
+  const hadTotpSeed = Boolean(byId("initialSecret").value.trim());
+  const settings = readInitialSettings();
+  const usePasskey = byId("initialScombzPasskey").checked;
+  const button = byId("initializeButton");
+  button.disabled = true;
+  let saved = false;
+  try {
+    const result = await send("initialize", {
+      username,
+      accountPassword: password,
+      secret: byId("initialSecret").value,
+      settings
+    });
 
-  stopInitialPreview();
-  for (const id of [
-    "initialAccountPassword",
-    "initialSecret",
-    "initialMasterPassword",
-    "initialMasterPasswordConfirm"
-  ]) {
-    byId(id).value = "";
+    if (!result?.ok) {
+      message(result?.error || "保存できませんでした。", true);
+      return;
+    }
+    saved = true;
+
+    for (const id of [
+      "initialAccountPassword",
+      "initialSecret"
+    ]) {
+      byId(id).value = "";
+    }
+
+    if (usePasskey) await PasskeyClient.register();
+    if (settings.scombzAutoLogin) {
+      await connectScombzApi();
+    }
+    message(settings.scombzAutoLogin
+      ? "初期設定を保存し、ScombApp APIへ接続しました。"
+      : "初期設定を保存しました。");
+    await refresh();
+  } catch (error) {
+    message((saved ? "初期設定は保存済みです。パスキー登録またはAPI接続を完了できませんでした。" : "保存できませんでした。") +
+      (error.message || String(error)), true);
+    await refresh();
+  } finally {
+    button.disabled = false;
+    if (saved && hadTotpSeed) {
+      document.dispatchEvent(new Event("sit:initialized-with-seed"));
+    }
   }
-
-  message("初期設定を保存しました。");
-  await refresh();
 });
 
 byId("unlockButton").addEventListener("click", async () => {
-  const result = await send("unlock", {
-    masterPassword: byId("unlockMasterPassword").value
-  });
-
-  if (!result?.ok) {
-    message(result?.error || "解除できませんでした。", true);
-    return;
+  const button = byId("unlockButton");
+  button.disabled = true;
+  try {
+    if (!byId("unlockMasterPasswordLabel").hidden) {
+      const result = await send("unlock", {
+        masterPassword: byId("unlockMasterPassword").value
+      });
+      if (!result?.ok) throw new Error(result?.error || "解除できませんでした。");
+      byId("unlockMasterPassword").value = "";
+    }
+    await PasskeyClient.register();
+    message("データをパスキー保護へ移行しました。マスターパスワードは今後使用しません。");
+  } catch (error) {
+    message("パスキーへの移行は完了していません。" + (error.message || String(error)), true);
+  } finally {
+    button.disabled = false;
+    await refresh();
   }
+});
 
-  byId("unlockMasterPassword").value = "";
-  message("解除しました。");
-  await refresh();
+byId("unlockPasskeyButton").addEventListener("click", async () => {
+  const button = byId("unlockPasskeyButton");
+  button.disabled = true;
+  try {
+    await PasskeyClient.unlock();
+    await refresh();
+  } catch (error) {
+    message(error.message || "パスキーで保管庫を解除できませんでした。", true);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 byId("unlockMasterPassword").addEventListener("keydown", (event) => {
   if (event.key === "Enter") byId("unlockButton").click();
 });
 
-byId("saveButton").addEventListener("click", async () => {
-  const result = await send("saveConfig", {
-    username: byId("username").value,
-    accountPassword: byId("replacementAccountPassword").value,
-    clearAccountPassword: byId("clearAccountPassword").checked,
-    secret: byId("replacementSecret").value,
-    settings: readSettings()
-  });
+async function saveAutomationSettings() {
+  // Capture only checkboxes. Do not include any unsaved account/seed inputs.
+  const settings = readSettings();
+  try {
+    const result = await queueSettingsWrite(() =>
+      send("saveSettings", { settings }));
+    if (!result?.ok) {
+      message(result?.error || "自動保存できませんでした。", true);
+      await refresh();
+    }
+  } catch (error) {
+    message(error.message || "自動保存できませんでした。", true);
+    await refresh();
+  }
+}
 
-  if (!result?.ok) {
-    message(result?.error || "保存できませんでした。", true);
+for (const id of [
+  "scombzAutoLogin",
+  "autoLogin", "keepSignedIn", "autoSelectProvider",
+  "autoFill", "autoSubmit"
+]) {
+  byId(id).addEventListener("change", saveAutomationSettings);
+}
+
+byId("saveAccountButton").addEventListener("click", async () => {
+  const button = byId("saveAccountButton");
+  button.disabled = true;
+  const username = byId("username").value.trim();
+  const password = byId("replacementAccountPassword").value;
+  try {
+    const result = await queueSettingsWrite(() =>
+      send("saveAccount", { username, accountPassword: password }));
+    if (!result?.ok) throw new Error(result?.error || "大学アカウントを保存できませんでした。");
+    if (byId("replacementAccountPassword").value === password) {
+      byId("replacementAccountPassword").value = "";
+    }
+    message(result.scombzDisconnected
+      ? "大学アカウントを保存しました。APIへ再接続してください。"
+      : "大学アカウントを保存しました。");
+    await refresh();
+    if (byId("scombzAutoLogin").checked) {
+      try {
+        await connectScombzApi();
+        message("大学アカウントを保存し、ScombApp APIへ接続しました。");
+      } catch (error) {
+        message("大学アカウントは保存済みですが、API接続に失敗しました。" +
+          (error.message || String(error)), true);
+      }
+      await refresh();
+    }
+  } catch (error) {
+    message(error.message || "大学アカウントを保存できませんでした。", true);
+    await refreshIfLocked();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+byId("saveSeedButton").addEventListener("click", async () => {
+  const secret = byId("replacementSecret").value;
+  if (!secret.trim()) {
+    message("保存するTOTPシードを入力してください。", true);
     return;
   }
+  try {
+    const result = await queueSettingsWrite(() =>
+      send("saveSecret", { secret }));
+    if (!result?.ok) throw new Error(result?.error || "TOTPシードを保存できませんでした。");
+    if (byId("replacementSecret").value === secret) {
+      byId("replacementSecret").value = "";
+    }
+    message("TOTPシードを保存しました。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "TOTPシードを保存できませんでした。", true);
+    await refreshIfLocked();
+  }
+});
 
-  byId("replacementAccountPassword").value = "";
-  byId("replacementSecret").value = "";
-  byId("clearAccountPassword").checked = false;
-  message("設定を保存しました。");
-  await refresh();
+byId("scombzPasskey").addEventListener("change", async () => {
+  const checkbox = byId("scombzPasskey");
+  checkbox.disabled = true;
+  try {
+    if (checkbox.checked) await PasskeyClient.register();
+    else await PasskeyClient.disable();
+    message(checkbox.checked ? "パスキーによる認証情報の保護を有効にしました。" : "パスキー保護を無効にし、端末の自動解除キーによる保護に切り替えました。");
+  } catch (error) {
+    message(error.name === "NotAllowedError" ? "パスキー設定の変更をキャンセルしました。" : error.message, true);
+  } finally {
+    checkbox.disabled = false;
+    await refresh();
+  }
+});
+
+byId("migratePasskeyButton").addEventListener("click", async () => {
+  const button = byId("migratePasskeyButton");
+  button.disabled = true;
+  try {
+    await PasskeyClient.register();
+    message("保管庫をPRF鍵で暗号化しました。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "PRF保護への移行に失敗しました。", true);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+async function connectScombzApi(credentials = {}) {
+  await PasskeyClient.confirmConnect();
+  const result = await send("scombzConnect", {
+    ...credentials,
+    pageTabId: (await chrome.tabs.getCurrent())?.id
+  });
+  if (!result?.ok) throw new Error(result?.error || "ScombApp APIへ接続できませんでした。");
+}
+
+byId("scombzConnectButton").addEventListener("click", async () => {
+  const button = byId("scombzConnectButton");
+  button.disabled = true;
+  const username = byId("username").value;
+  const password = byId("replacementAccountPassword").value;
+  let connectionAttempted = false;
+  try {
+    const config = await send("getConfig");
+    if (!config?.ok) throw new Error(config?.error || "設定を読み込めません。");
+    if (normalizeUsername(username) !== normalizeUsername(config.username)) {
+      message("大学ユーザー名を変更する場合は、先に大学アカウントを保存してください。", true);
+      return;
+    }
+    connectionAttempted = true;
+    // A temporary university password is used only for this API connection.
+    await connectScombzApi({
+      username,
+      accountPassword: password
+    });
+    message("ScombApp APIへ接続しました。ScombZへの自動ログインを有効にしました。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "ScombApp APIへ接続できませんでした。", true);
+    await refreshIfLocked();
+  } finally {
+    if (connectionAttempted && byId("replacementAccountPassword").value === password) {
+      byId("replacementAccountPassword").value = "";
+    }
+    button.disabled = false;
+  }
+});
+
+byId("scombzDisconnectButton").addEventListener("click", async () => {
+  if (!confirm("端末に保存されたScombApp APIトークンを削除しますか？")) return;
+  try {
+    const result = await send("scombzDisconnect");
+    if (!result?.ok) throw new Error(result?.error || "接続を削除できませんでした。");
+    message("ScombApp APIの接続情報を削除しました。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "接続を削除できませんでした。", true);
+    await refreshIfLocked();
+  }
+});
+
+
+byId("encryptBackupCheckbox").addEventListener("change", () => {
+  const checked = byId("encryptBackupCheckbox").checked;
+  byId("backupPasswordFields").hidden = !checked;
+  if (!checked) {
+    byId("backupPassword").value = "";
+    byId("backupPasswordConfirm").value = "";
+  }
 });
 
 byId("exportButton").addEventListener("click", async () => {
   try {
-    const password = byId("exportPassword").value;
-    if (password.length < 8) {
-      throw new Error("バックアップ用パスワードは8文字以上にしてください。");
+    const result = await send("exportBackupData");
+    if (!result?.ok) throw new Error(result?.error || "バックアップを取得できません。");
+    const data = result.data;
+    const encrypted = byId("encryptBackupCheckbox").checked;
+    let backup;
+    if (encrypted) {
+      const password = byId("backupPassword").value;
+      if (password.length < 8) throw new Error("バックアップパスワードを8文字以上で入力してください。");
+      if (password !== byId("backupPasswordConfirm").value) {
+        throw new Error("確認用バックアップパスワードが一致しません。");
+      }
+      backup = await encryptBackupData(data, password);
+    } else {
+      if (data?.secret && !confirm(
+        "バックアップにはTOTPシードが暗号化されずに含まれます。安全に保管しますか？"
+      )) return;
+      backup = { format: BACKUP_FORMAT, version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(), data };
     }
-    if (password !== byId("exportPasswordConfirm").value) {
-      throw new Error("バックアップ用パスワードの確認が一致しません。");
-    }
-
-    const local = await chrome.storage.local.get(LOCAL_VAULT_KEY);
-    const session = await chrome.storage.session.get(SESSION_KEY);
-    const vault = local[LOCAL_VAULT_KEY];
-    const encodedKey = session[SESSION_KEY];
-    if (!vault || !encodedKey) {
-      throw new Error("保管庫を解除してからバックアップしてください。");
-    }
-
-    const data = await decryptVaultPayload(vault, await importVaultKey(encodedKey));
-    validateBackupData(data);
-    const backup = {
-      format: BACKUP_FORMAT,
-      version: BACKUP_VERSION,
-      exportedAt: new Date().toISOString(),
-      vault: await encryptBackupVault(data, password)
-    };
     const date = new Date().toISOString().slice(0, 10);
-    downloadJson(backup, `sit-totp-autofill-backup-${date}.json`);
-    byId("exportPassword").value = "";
-    byId("exportPasswordConfirm").value = "";
-    message("暗号化バックアップを書き出しました。");
+    downloadJson(backup, "scombz-login-helper-backup-" + date +
+      (encrypted ? "-encrypted" : "") + ".json");
+    byId("backupPassword").value = "";
+    byId("backupPasswordConfirm").value = "";
+    message(encrypted ? "暗号化バックアップを書き出しました。" : "バックアップを書き出しました。");
   } catch (error) {
     message(error.message || String(error), true);
+    await refreshIfLocked();
+  }
+});
+
+byId("importFile").addEventListener("change", async () => {
+  byId("legacyImportPasswordLabel").hidden = true;
+  const file = byId("importFile").files?.[0];
+  if (!file) return;
+  try {
+    const envelope = JSON.parse(await file.text());
+    byId("importPasswordLabelText").textContent = "バックアップパスワード";
+    byId("legacyImportPasswordLabel").hidden =
+      envelope?.format !== BACKUP_FORMAT || ![1, ENCRYPTED_BACKUP_VERSION].includes(envelope?.version);
+  } catch {
+    // Import handler presents validation errors.
   }
 });
 
 byId("importButton").addEventListener("click", async () => {
   try {
     const file = byId("importFile").files?.[0];
-    const password = byId("importPassword").value;
     if (!file) throw new Error("バックアップファイルを選択してください。");
-    if (!password) throw new Error("バックアップ用パスワードを入力してください。");
-
     const envelope = JSON.parse(await file.text());
-    const vault = validateBackupEnvelope(envelope);
-    const key = await deriveBackupKey(password, base64ToBytes(vault.salt), true);
+    if (envelope?.format !== BACKUP_FORMAT) {
+      throw new Error("この拡張機能のバックアップではありません。");
+    }
     let data;
-    try {
-      data = await decryptVaultPayload(vault, key);
-    } catch {
-      throw new Error("バックアップ用パスワードが違うか、ファイルが破損しています。");
+    if (envelope.version === BACKUP_VERSION) {
+      data = envelope.data;
+    } else if (envelope.version === ENCRYPTED_BACKUP_VERSION) {
+      data = await decryptEncryptedBackup(envelope, byId("importPassword").value);
+    } else if (envelope.version === 1) {
+      const vault = validateBackupEnvelope(envelope);
+      const password = byId("importPassword").value;
+      if (!password) throw new Error("バックアップパスワードを入力してください。");
+      const key = await deriveBackupKey(password, base64ToBytes(vault.salt), false);
+      try {
+        data = await decryptVaultPayload(vault, key);
+      } catch {
+        throw new Error("バックアップパスワードが違うか、ファイルが破損しています。");
+      }
+      validateBackupData(data);
+    } else {
+      throw new Error("対応していないバックアップ形式です。");
     }
-    validateBackupData(data);
-
     const status = await send("status");
-    if (
-      status.initialized &&
-      !confirm("現在の設定をバックアップ内の設定で上書きしますか？")
-    ) {
-      return;
-    }
-
-    const rawKey = new Uint8Array(await crypto.subtle.exportKey("raw", key));
-    await chrome.storage.local.set({ [LOCAL_VAULT_KEY]: vault });
-    await chrome.storage.local.remove(LOCAL_DEVICE_KEY);
-    await chrome.storage.session.set({ [SESSION_KEY]: bytesToBase64(rawKey) });
-
+    if (status.initialized &&
+        !confirm("既存設定をバックアップのシードと設定で上書きしますか？")) return;
+    const result = await send("importBackupData", { data });
+    if (!result?.ok) throw new Error(result?.error || "インポートに失敗しました。");
     byId("importFile").value = "";
     byId("importPassword").value = "";
-    message("バックアップをインポートしました。バックアップ用パスワードが新しいマスターパスワードになります。");
+    byId("legacyImportPasswordLabel").hidden = true;
+    message("シードと設定を復元しました。大学パスワード・ScombZ API接続は再設定してください。");
     await refresh();
   } catch (error) {
     message(error.message || String(error), true);
+    await refreshIfLocked();
   }
 });
 
-byId("lockButton").addEventListener("click", async () => {
-  await send("lock");
-  message("ロックしました。");
-  await refresh();
-});
-
-byId("resetLockedButton").addEventListener("click", async () => {
+async function resetVault() {
   if (!confirm("暗号化保管庫と設定を完全に削除しますか？")) return;
-  await send("reset");
-  message("すべて削除しました。");
-  await refresh();
-});
+  try {
+    const result = await send("reset");
+    if (!result?.ok) throw new Error(result?.error || "データを削除できませんでした。");
+    pendingAccountUsername = null;
+    byId("unlockMasterPassword").value = "";
+    message("すべて削除しました。");
+    await refresh();
+  } catch (error) {
+    message(error.message || "データを削除できませんでした。", true);
+  }
+}
 
-byId("resetButton").addEventListener("click", async () => {
-  if (!confirm("暗号化保管庫と設定を完全に削除しますか？")) return;
-  await send("reset");
-  message("すべて削除しました。");
-  await refresh();
-});
+byId("resetLockedButton").addEventListener("click", resetVault);
+byId("resetButton").addEventListener("click", resetVault);
 
-updateInitialMasterPasswordMode();
 updateInitialAutoLoginMode();
+byId("extensionVersion").textContent = `v${chrome.runtime.getManifest().version}`;
 refresh().catch((error) => message(error.message, true));

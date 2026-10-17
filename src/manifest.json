@@ -1,20 +1,27 @@
 {
   "manifest_version": 3,
-  "name": "SIT ADFS TOTP Autofill",
-  "version": "0.5.1",
-  "description": "芝浦工業大学ADFSのID・パスワード、Azure MFA選択、SHA-256 TOTP入力を自動化します。",
+  "name": "ScombZ Login Helper",
+  "version": "1.0.0",
+  "description": "ScombApp APIによるScombZ自動ログインとSESSION更新。従来のADFS TOTP補助機能も利用できます。",
   "minimum_chrome_version": "102",
   "permissions": [
-    "storage"
+    "storage",
+    "cookies",
+    "webNavigation",
+    "webRequest",
+    "declarativeNetRequestWithHostAccess"
   ],
   "host_permissions": [
-    "https://adfs.sic.shibaura-it.ac.jp/adfs/ls*"
+    "https://adfs.sic.shibaura-it.ac.jp/adfs/ls*",
+    "https://scombz.shibaura-it.ac.jp/*",
+    "https://mobile.scombz.shibaura-it.ac.jp/*",
+    "https://smob.sic.shibaura-it.ac.jp/smob/api/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "SIT ADFS TOTP Autofill",
+    "default_title": "ScombZ Login Helper",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

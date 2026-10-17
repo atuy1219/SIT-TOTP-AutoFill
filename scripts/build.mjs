@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import process from "node:process";
@@ -44,7 +44,20 @@ async function buildTarget(target) {
       ?? "background.js";
 
     delete manifest.minimum_chrome_version;
-    manifest.background = { scripts: [backgroundScript] };
+    // Firefox uses background scripts (window context), where importScripts is
+    // unavailable. Preload the helper as an ordinary background script instead.
+    const backgroundSource = await readFile(path.join(outputDir, backgroundScript), "utf8");
+    const importedScripts = [...backgroundSource.matchAll(
+      /^\s*importScripts\(["']([^"']+\.js)["']\);\s*$/gm
+    )].map((match) => match[1]);
+    manifest.background = { scripts: [...importedScripts, backgroundScript] };
+    for (const imported of importedScripts) {
+      await access(path.join(outputDir, imported));
+    }
+    await writeFile(
+      path.join(outputDir, backgroundScript),
+      backgroundSource.replace(/^\s*importScripts\(["'][^"']+\.js["']\);\s*$/gm, "")
+    );
     manifest.browser_specific_settings = {
       gecko: {
         id: "sit-totp-autofill@atuy1219.github.io",

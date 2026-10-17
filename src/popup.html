@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SIT ADFS TOTP Autofill</title>
+  <title>ScombZ Login Helper</title>
   <link rel="stylesheet" href="ui.css">
 </head>
 <body class="popup">
@@ -12,21 +12,13 @@
       <img src="icons/icon48.png" alt="">
       <div>
         <h1>SIT ADFS TOTP</h1>
-        <div class="muted">SHA-256・6桁・30秒</div>
+        <div class="muted">SHA-256・6桁・30秒 <span id="extensionVersion"></span></div>
       </div>
     </header>
 
     <section id="setupPanel" class="card" hidden>
       <p id="setupMessage">初期設定が必要です。</p>
       <button id="openOptionsFromSetup">設定を開く</button>
-    </section>
-
-    <section id="unlockPanel" class="card" hidden>
-      <label>
-        マスターパスワード
-        <input id="unlockPassword" type="password" autocomplete="current-password">
-      </label>
-      <button id="unlockButton">解除</button>
     </section>
 
     <section id="codePanel" class="card" hidden>
@@ -48,9 +40,10 @@
         <span id="remaining" class="muted">--秒</span>
       </div>
       <div class="progress" aria-hidden="true"><div id="progressBar"></div></div>
-      <div class="row wrap">
-        <button id="lockButton" class="secondary">ロック</button>
-      </div>
+    </section>
+
+    <section id="scombzPanel" class="card" hidden>
+      <p id="scombzPopupStatus" class="muted"></p>
     </section>
 
     <button id="optionsButton" class="secondary">設定</button>

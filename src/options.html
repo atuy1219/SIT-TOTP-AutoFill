@@ -2,8 +2,9 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="connect-src 'none'; form-action 'none'; base-uri 'none'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SIT ADFS TOTP Autofill 設定</title>
+  <title>ScombZ Login Helper 設定</title>
   <link rel="stylesheet" href="ui.css">
 </head>
 <body>
@@ -11,95 +12,94 @@
     <header>
       <img src="icons/icon48.png" alt="">
       <div>
-        <h1>SIT ADFS TOTP Autofill</h1>
-        <div class="muted">ID・Azure MFA選択・TOTPの3画面対応</div>
+        <h1>ScombZ Login Helper</h1>
+        <div class="muted">ScombZの自動ログイン <span id="extensionVersion"></span></div>
       </div>
     </header>
+
+    <section id="consentPanel" class="card" hidden>
+      <h2>利用前の確認</h2>
+      <p class="warning">この拡張機能には、ScombZの通常の二段階認証画面を経由せず、ScombApp APIを利用してログインする機能があります。</p>
+      <p>認証情報やAPIトークンの保存、端末の紛失・不正アクセス、大学の利用規約に抵触する可能性などのリスクを理解して使用してください。</p>
+      <p>利用により生じた損害について、法令上免責が認められる範囲で作成者は責任を負いません。安全性や継続的な動作を保証するものではありません。</p>
+      <label class="checkbox"><input id="riskConsentCheckbox" type="checkbox">上記の内容を理解し、自己の責任で利用することに同意します</label>
+      <button id="riskConsentButton" type="button" disabled>同意して開始</button>
+    </section>
 
     <section id="initializePanel" class="card" hidden>
       <h2>初期設定</h2>
       <p class="warning">
-        大学パスワードとTOTPシードは認証情報です。この端末内だけで扱ってください。
+        大学パスワード、TOTPシード、ScombApp APIトークンは認証情報です。この端末内だけで扱ってください。
       </p>
 
       <label>
-        大学ユーザー名（任意）
-        <input id="initialUsername" type="text" autocomplete="username"
+        大学ユーザー名（必須）
+        <input id="initialUsername" type="text" autocomplete="username" required
           placeholder="al00000 または al00000@sic">
       </label>
       <label>
-        大学アカウントのパスワード（任意）
-        <input id="initialAccountPassword" type="password" autocomplete="off">
+        大学アカウントのパスワード（必須）
+        <input id="initialAccountPassword" type="password" autocomplete="new-password" required>
       </label>
-      <p class="muted">
-        IDとパスワードを保存しない場合は、両方を空欄にして自動ログインを無効にしてください。
-      </p>
+      <p class="muted">認証情報はこの端末の暗号化保管庫に保存されます。共有PCでは使用しないでください。</p>
+
+      <h3>認証情報の保護</h3>
+      <label class="checkbox">
+        <input id="initialScombzPasskey" type="checkbox">
+        パスキーで認証情報を保護する（任意、推奨）
+      </label>
+      <p class="muted">この端末に保存するTOTPシード・大学パスワード・APIトークンをパスキーで保護します。ScombZ自動ログインを使わない場合も利用できます。</p>
+      <p class="muted">保存後にパスキーを登録します。パスキーを失うと暗号化した認証情報を復号できません。</p>
+
+      <h3>ScombZ自動ログイン（TOTP不要）</h3>
+      <label class="checkbox">
+        <input id="initialScombzAutoLogin" type="checkbox">
+        ScombApp APIでログインする
+      </label>
+      <details class="legacy-details">
+        <summary>ADFSログイン・認証コード設定(非推奨)</summary>
+        <h3>TOTPシード・コード表示</h3>
       <label>
-        32文字のBase32シード
+        32文字のBase32シード（TOTPコード表示・ADFS用、任意）
         <input id="initialSecret" type="password" autocomplete="off" spellcheck="false"
           placeholder="ABCDEFGHIJKLMNOPQRSTUVWXYZ234567">
       </label>
-      <button id="initialPreviewButton" type="button" class="secondary" hidden>現在のコードを確認</button>
-      <div id="initialPreview" class="totp-preview" hidden>
-        <div>
-          <div class="muted">Microsoft Authenticatorのコードと一致することを確認してください</div>
-          <strong id="initialPreviewCode" class="preview-code">------</strong>
-        </div>
-        <span id="initialPreviewRemaining" class="muted">残り--秒</span>
-      </div>
-
+        <h3>ADFS自動ログイン・TOTP自動入力</h3>
+      <p class="muted">初期状態では無効です。Microsoft 365等のADFSで必要な機能だけ有効にしてください。</p>
       <label class="checkbox">
-        <input id="initialUseMasterPassword" type="checkbox" checked>
-        マスターパスワードで保護する（推奨）
-      </label>
-      <p id="deviceUnlockWarning" class="warning" hidden>
-        無効にすると、端末内へ自動解除キーを保存します。Chromeプロファイルを操作できる第三者から認証情報を保護できません。
-      </p>
-
-      <div id="initialMasterPasswordFields" class="grid">
-        <label>
-          保管庫のマスターパスワード
-          <input id="initialMasterPassword" type="password" autocomplete="new-password" minlength="6">
-          <span id="initialMasterPasswordRequirement" class="input-requirement" hidden>6文字以上。数字のみでも使用できます。</span>
-        </label>
-        <label>
-          マスターパスワードの確認
-          <input id="initialMasterPasswordConfirm" type="password" autocomplete="new-password" minlength="6">
-        </label>
-      </div>
-
-      <label class="checkbox">
-        <input id="initialAutoLogin" type="checkbox" checked>
+        <input id="initialAutoLogin" type="checkbox">
         IDとパスワードを入力して自動送信する
       </label>
       <label class="checkbox">
-        <input id="initialKeepSignedIn" type="checkbox" checked>
+        <input id="initialKeepSignedIn" type="checkbox">
         「サインアウトしない」を有効にする
       </label>
       <label class="checkbox">
-        <input id="initialAutoSelectProvider" type="checkbox" checked>
+        <input id="initialAutoSelectProvider" type="checkbox">
         Azure Multi-Factor Authenticationを自動選択する
       </label>
       <label class="checkbox">
-        <input id="initialAutoFill" type="checkbox" checked>
+        <input id="initialAutoFill" type="checkbox">
         確認コードを自動入力する
       </label>
       <label class="checkbox">
-        <input id="initialAutoSubmit" type="checkbox" checked>
+        <input id="initialAutoSubmit" type="checkbox">
         確認コード入力後に自動送信する
       </label>
+      </details>
 
       <button id="initializeButton">保存</button>
     </section>
 
     <section id="unlockPanel" class="card" hidden>
-      <h2>保管庫を解除</h2>
+      <h2 id="unlockHeading">マスターパスワードからパスキーへ移行</h2>
       <p id="unlockDescription" class="muted"></p>
       <label id="unlockMasterPasswordLabel">
         マスターパスワード
         <input id="unlockMasterPassword" type="password" autocomplete="current-password">
       </label>
-      <button id="unlockButton">解除</button>
+      <button id="unlockButton">解除してパスキーを登録</button>
+      <button id="unlockPasskeyButton" type="button" hidden>パスキーで解除</button>
       <button id="resetLockedButton" class="danger" hidden>データを削除して再設定</button>
     </section>
 
@@ -108,40 +108,58 @@
         <h2>大学アカウント</h2>
         <label>
           大学ユーザー名
-          <input id="username" type="text" autocomplete="username">
+          <input id="username" type="text" autocomplete="username" required>
         </label>
         <label>
-          パスワードを変更する場合のみ入力
+          大学パスワード
           <input id="replacementAccountPassword" type="password" autocomplete="off"
-            placeholder="現在のパスワードは表示しません">
+            placeholder="変更する場合のみ入力">
         </label>
-        <label class="checkbox">
-          <input id="clearAccountPassword" type="checkbox">
-          保存済みの大学パスワードを削除する
-        </label>
+        <button id="saveAccountButton" type="button">大学アカウントを保存</button>
         <p id="passwordStatus" class="muted"></p>
       </section>
 
       <section class="card">
-        <h2>TOTP</h2>
+        <h2>認証情報の保護</h2>
+        <label class="checkbox">
+          <input id="scombzPasskey" type="checkbox">
+          パスキーで認証情報を保護する（任意、推奨）
+        </label>
+        <p class="muted">この端末に保存するTOTPシード・大学パスワード・APIトークンを保護します。ScombZ自動ログインを使わない場合も利用できます。</p>
+        <p id="credentialProtectionStatus" class="muted" role="status">保護方式を確認しています。</p>
+        <p class="muted">解除後は5分間利用できます。ScombZの自動ログイン・再認証とAPI接続の前にもパスキーで確認します。</p>
+        <p class="muted">パスキーを失うと暗号化した認証情報を復号できません。</p>
+        <button id="migratePasskeyButton" type="button" class="secondary" hidden>既存パスキーをPRF保護へ移行</button>
+        <p class="muted">バックアップファイルはパスキーでは保護されません。「バックアップ」でパスワードによる暗号化を選択してください。</p>
+      </section>
+
+      <section class="card">
+        <h2>ScombZ自動ログイン</h2>
+        <label class="checkbox">
+          <input id="scombzAutoLogin" type="checkbox">
+          ScombZではScombApp APIの認証経路を優先する
+        </label>
+        <p id="apiConnectionStatus" class="muted" role="status">接続状態を確認しています。</p>
+        <div class="row wrap">
+          <button id="scombzConnectButton" class="secondary">APIに接続</button>
+          <button id="scombzDisconnectButton" class="secondary">API接続情報を削除</button>
+
+        </div>
+      </section>
+
+      <details class="card legacy-details">
+        <summary>ADFSログイン・認証コード設定(非推奨)</summary>
+        <h3>TOTPシード・コード表示</h3>
         <p><strong>SHA-256・6桁・30秒</strong></p>
         <label>
           シードを変更する場合のみ入力
           <input id="replacementSecret" type="password" autocomplete="off" spellcheck="false"
             placeholder="現在のシードは表示しません">
         </label>
-      </section>
-
-      <section class="card">
-        <h2>保護方式</h2>
-        <p id="unlockModeStatus"></p>
-        <p class="muted">
-          保護方式を変更するには「すべて削除」後に初期設定をやり直してください。
-        </p>
-      </section>
-
-      <section class="card">
-        <h2>自動化</h2>
+        <button id="saveSeedButton" type="button">TOTPシードを保存</button>
+        <p id="seedStatus" class="muted"></p>
+        <h3>ADFS自動ログイン・TOTP自動入力</h3>
+        <p class="muted">必要な場合のみ有効にしてください。TOTPシードの保存と手動コード表示は、これらを無効にしても利用できます。</p>
         <label class="checkbox">
           <input id="autoLogin" type="checkbox">
           IDとパスワードを入力して自動送信する
@@ -162,48 +180,43 @@
           <input id="autoSubmit" type="checkbox">
           <code>#signInButton</code>で自動送信する
         </label>
-        <button id="saveButton">保存</button>
-        <button id="lockButton" class="secondary">ロック</button>
-      </section>
+        <p class="muted">各項目は変更した時点で自動保存されます。</p>
+      </details>
 
       <section class="card">
-        <h2>暗号化バックアップ</h2>
-        <p class="muted">
-          TOTPシード、大学アカウント、自動化設定を、別のバックアップ用パスワードで再暗号化して書き出します。
-        </p>
-        <div class="grid">
-          <label>
-            バックアップ用パスワード
-            <input id="exportPassword" type="password" autocomplete="new-password">
-          </label>
-          <label>
-            バックアップ用パスワードの確認
-            <input id="exportPasswordConfirm" type="password" autocomplete="new-password">
-          </label>
+        <h2>バックアップ</h2>
+        <p class="muted">大学パスワード・APIトークンはバックアップに含めません。TOTPシードと設定は出力されます。</p>
+        <p class="muted">パスキーによる認証情報の保護とは別に、バックアップファイルの暗号化を設定します。</p>
+        <label class="checkbox"><input id="encryptBackupCheckbox" type="checkbox">バックアップパスワードで暗号化する（任意）</label>
+        <div id="backupPasswordFields" hidden>
+          <label>バックアップパスワード（8文字以上）
+            <input id="backupPassword" type="password" autocomplete="new-password"></label>
+          <label>バックアップパスワード（確認）
+            <input id="backupPasswordConfirm" type="password" autocomplete="new-password"></label>
         </div>
+        <p class="muted">暗号化しない場合、TOTPシードは平文で保存されます。バックアップパスワードを忘れると暗号化バックアップは復元できません。</p>
         <button id="exportButton">バックアップを書き出す</button>
       </section>
 
-      <section class="card">
-        <h2>データ削除</h2>
-        <button id="resetButton" class="danger">すべて削除</button>
-      </section>
     </div>
 
     <section id="importPanel" class="card">
-      <h2>暗号化バックアップをインポート</h2>
-      <p class="muted">
-        インポートすると、バックアップ用パスワードが新しいマスターパスワードになります。既存の設定がある場合は上書きされます。
-      </p>
+      <h2>バックアップをインポート</h2>
+      <p class="muted">シードと設定を復元します。パスワードやAPI接続は再設定してください。</p>
       <label>
         バックアップファイル
         <input id="importFile" type="file" accept="application/json,.json">
       </label>
-      <label>
-        バックアップ用パスワード
-        <input id="importPassword" type="password" autocomplete="current-password">
+      <label id="legacyImportPasswordLabel" hidden>
+        <span id="importPasswordLabelText">バックアップパスワード</span>
+        <input id="importPassword" type="password" autocomplete="off">
       </label>
       <button id="importButton" class="secondary">インポート</button>
+    </section>
+
+    <section id="deleteDataPanel" class="card" hidden>
+      <h2>データ削除</h2>
+      <button id="resetButton" class="danger">すべて削除</button>
     </section>
 
     <dialog id="initialCodeDialog" class="code-dialog">
@@ -219,6 +232,7 @@
     <p id="message" class="message" aria-live="polite"></p>
   </main>
   <script src="visibility.js"></script>
+  <script src="passkey-client.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
