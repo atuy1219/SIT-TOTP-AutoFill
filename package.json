@@ -1,11 +1,11 @@
 {
-  "name": "sit-totp-autofill",
-  "version": "0.5.1",
+  "name": "scombz-login-helper",
+  "version": "0.7.0",
   "private": true,
-  "description": "Chromium and Firefox extension that automates SIT ADFS sign-in and SHA-256 TOTP entry.",
+  "description": "ScombZ automatic login and SESSION recovery, with optional legacy ADFS TOTP autofill.",
   "type": "module",
   "scripts": {
-    "check": "node scripts/check.mjs",
+    "check": "node scripts/check.mjs && node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
     "build:chromium": "node scripts/build.mjs chromium",
     "build:firefox": "node scripts/build.mjs firefox",

@@ -21,11 +21,11 @@ jobs:
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
-          name: sit-adfs-totp-autofill-chromium
+          name: scombz-login-helper-chromium
           path: dist/chromium/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: sit-adfs-totp-autofill-firefox
+          name: scombz-login-helper-firefox
           path: dist/firefox/
           if-no-files-found: error

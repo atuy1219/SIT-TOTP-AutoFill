@@ -118,7 +118,7 @@ await mkdir(releaseDir, { recursive: true });
 for (const target of targets) {
   const outputPath = path.join(
     releaseDir,
-    `sit-adfs-totp-autofill-${target}.zip`
+    `scombz-login-helper-${target}.zip`
   );
   const files = await collect(path.join(distDir, target));
   await writeFile(outputPath, await createZip(files));

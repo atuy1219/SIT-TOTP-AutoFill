@@ -44,7 +44,7 @@ jobs:
           set -euo pipefail
           version="$(node -p "JSON.parse(require('fs').readFileSync('src/manifest.json', 'utf8')).version")"
           tag="${INPUT_TAG:-v$version}"
-          title="${INPUT_TITLE:-SIT TOTP AutoFill $tag}"
+          title="${INPUT_TITLE:-ScombZ Login Helper $tag}"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "title=$title" >> "$GITHUB_OUTPUT"
       - name: Create release or replace its assets
